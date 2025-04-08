@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -68,8 +69,8 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
         focusNode: _focusNode,
         controller: widget.controller,
         onChanged: (text) {
-          // Trigger haptic feedback on every change.
-          HapticFeedback.lightImpact();
+          // Trigger haptic feedback only for iOS.
+          if (Platform.isIOS) HapticFeedback.lightImpact();
           // Convert text to uppercase before propagating.
           final upperText = text.toUpperCase();
           if (widget.onChanged != null) widget.onChanged!(upperText);
@@ -99,10 +100,10 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
     );
 
     // Wrap the container with a GestureDetector to focus the input when tapped,
-    // trigger haptic feedback, and apply any additional effects.
+    // triggering haptic feedback only on iOS.
     Widget clickableTextField = GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
+        if (Platform.isIOS) HapticFeedback.lightImpact();
         _focusNode.requestFocus();
       },
       child: textField,
