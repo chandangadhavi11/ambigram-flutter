@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // NEW: for MethodChannel
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
+import 'package:flutter_application_1/shared/widgets/custom_button.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:screenshot/screenshot.dart';
@@ -163,15 +164,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
               const SizedBox(height: 20),
 
               // Existing share button.
-              ElevatedButton(
-                onPressed: _shareScreenshot,
-                child: const Text('Share with App Link'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: AmbigramButton(
+                  onPressed: _shareScreenshot,
+                  text: 'SHARE YOU AMBIGRAM',
+                ),
               ),
-
-              // NEW: The "Save in Gallery" button.
-              ElevatedButton(
-                onPressed: _saveToGallery,
-                child: const Text('Save in Gallery'),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: AmbigramButton(
+                  onPressed: _saveToGallery,
+                  text: 'SAVE IN GALLERY',
+                ),
               ),
             ],
           ),

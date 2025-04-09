@@ -12,7 +12,7 @@ void main() async {
   // 1. Initialize timezone data
   tz.initializeTimeZones();
   // 2. Optional: set local location
-  tz.setLocalLocation(tz.getLocation('America/Detroit'));
+  tz.setLocalLocation(tz.getLocation(tz.local.name));
   // or simply tz.setLocalLocation(tz.local);
 
   // 3. Initialize notifications
@@ -28,22 +28,22 @@ void main() async {
   await notificationService.requestAndroidPermissions();
 
   // Schedule for 3:00 PM (15:00 in 24-hour)
-  // await notificationService.scheduleDailyNotification(
-  //   id: 1,
-  //   hour: 15,
-  //   minute: 0,
-  //   title: 'Afternoon Reminder',
-  //   body: 'Your 3 PM scheduled notification!',
-  // );
-  //
-  // // Schedule for 7:00 PM (19:00 in 24-hour)
-  // await notificationService.scheduleDailyNotification(
-  //   id: 2,
-  //   hour: 19,
-  //   minute: 0,
-  //   title: 'Evening Reminder',
-  //   body: 'Your 7 PM scheduled notification!',
-  // );
+  await notificationService.scheduleDailyNotification(
+    id: 1,
+    hour: 15,
+    minute: 0,
+    title: 'Afternoon Reminder',
+    body: 'Your 3 PM scheduled notification!',
+  );
+
+  // Schedule for 7:00 PM (19:00 in 24-hour)
+  await notificationService.scheduleDailyNotification(
+    id: 2,
+    hour: 19,
+    minute: 0,
+    title: 'Evening Reminder',
+    body: 'Your 7 PM scheduled notification!',
+  );
 
   runApp(MyApp());
 }
@@ -56,6 +56,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Industry-Level Flutter App',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       routerDelegate: appRouter.routerDelegate,
       routeInformationParser: appRouter.routeInformationParser,
       routeInformationProvider: appRouter.routeInformationProvider,
