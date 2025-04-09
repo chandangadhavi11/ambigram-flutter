@@ -48,7 +48,7 @@ class _ColorSelectionSectionState extends State<ColorSelectionSection> {
                     decoration: const BoxDecoration(),
                     child: Center(
                       child: SvgPicture.asset(
-                        'assets/images/color_icon.svg',
+                        'assets/images/color_icon_light.svg',
                         width: 100.0,
                         height: 100.0,
                         semanticsLabel: 'Color Icon',
