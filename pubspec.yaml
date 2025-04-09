@@ -57,7 +57,7 @@ dev_dependencies:
 
   flutter_test:
     sdk: flutter
-  flutter_svg: ^2.0.17 # Use the latest version if available
+  # Removed unnecessary dev dependency on flutter_svg
   shared_preferences: ^2.0.17
 
 flutter_icons:
@@ -87,7 +87,6 @@ flutter:
     - assets/images/color_icon.svg
     - assets/images/flash_icon.svg
     - assets/images/tick_icon.svg
-    - assets/images/noise.jpg
     # - assets/images
 
   # An image asset can refer to one or more resolution-specific "variants", see
