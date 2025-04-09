@@ -48,21 +48,39 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasError = widget.error?.isNotEmpty ?? false;
-    final Color borderColor =
-        hasError ? const Color(0xFFE35555) : const Color(0xFF6C6A6E);
-    final Color textColor =
-        hasError ? const Color(0xFFE35555) : const Color(0xFF2B2734);
+    final theme = Theme.of(context);
+    final bool hasError = (widget.error?.isNotEmpty ?? false);
 
-    // Build the text field container with the proper styling.
+    // We’ll maintain the original light-mode border color (#6C6A6E)
+    // for light mode and choose something else (like outline) for dark mode.
+    final borderColor =
+        hasError
+            ? theme.colorScheme.error
+            : theme.brightness == Brightness.light
+            ? const Color(0xFF6C6A6E)
+            : theme.colorScheme.outline;
+
+    // Similarly, let's maintain the original text color (#2B2734) for light mode
+    // if no error, otherwise rely on theme-based colors.
+    final textColor =
+        hasError
+            ? theme.colorScheme.error
+            : theme.brightness == Brightness.light
+            ? const Color(0xFF2B2734)
+            : theme.colorScheme.onSurface;
+
+    // For background, we can use the theme’s surface color or any other
+    // color that suits dark mode vs. light mode.
+    final backgroundColor = theme.colorScheme.surface;
+
     Widget textField = Container(
       width: double.infinity,
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       decoration: ShapeDecoration(
-        color: Colors.white,
+        color: backgroundColor,
         shape: RoundedRectangleBorder(
-          side: BorderSide(width: 0.50, color: borderColor),
+          side: BorderSide(width: 0.5, color: borderColor),
         ),
       ),
       child: TextField(
@@ -73,7 +91,7 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
           if (Platform.isIOS) HapticFeedback.lightImpact();
           // Convert text to uppercase before propagating.
           final upperText = text.toUpperCase();
-          if (widget.onChanged != null) widget.onChanged!(upperText);
+          widget.onChanged?.call(upperText);
         },
         inputFormatters: [UpperCaseTextFormatter()],
         textCapitalization: TextCapitalization.characters,
@@ -88,7 +106,8 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
           border: InputBorder.none,
           hintText: widget.hintText,
           hintStyle: TextStyle(
-            color: textColor,
+            // Slightly lighter than the primary text color for the hint:
+            color: textColor.withOpacity(0.6),
             fontSize: 12,
             fontFamily: 'Averta Demo PE Cutted Demo',
             fontWeight: FontWeight.w400,
@@ -119,8 +138,8 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
           const SizedBox(height: 8),
           Text(
             widget.error!,
-            style: const TextStyle(
-              color: Color(0xFFE35555),
+            style: TextStyle(
+              color: theme.colorScheme.error,
               fontSize: 12,
               fontFamily: 'Poppins',
               fontWeight: FontWeight.w400,
@@ -129,6 +148,7 @@ class _AmbigramTextInputState extends State<AmbigramTextInput> {
         ],
       );
     }
+
     return clickableTextField;
   }
 }
