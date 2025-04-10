@@ -16,15 +16,15 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.INTERNET" />
 
+
     <application
         android:label="flutter_application_1"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
         
-        <receiver
-            android:exported="false"
-            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+         <receiver android:name=".NotificationReceiver" />
+
         
         <!-- Receiver to reschedule alarms after reboot or reinstall -->
         <receiver

@@ -11,41 +11,45 @@ void main() async {
 
   // 1. Initialize timezone data
   tz.initializeTimeZones();
-  // 2. Optional: set local location
+
+  // 2. (Optional) Set local location
   tz.setLocalLocation(tz.getLocation(tz.local.name));
-  // or simply tz.setLocalLocation(tz.local);
+  // or simply: tz.setLocalLocation(tz.local);
 
   // 3. Initialize notifications
   final notificationService = NotificationService();
   await notificationService.initNotifications();
 
-  // (Optional) Request iOS permissions
+  // 4. Request iOS permissions
   if (Platform.isIOS) {
     await notificationService.requestIOSPermissions();
   }
-  // (Optional) Request Android 13+ notifications permission
-  // This will prompt the user on Android 13+ only
+
+  // 5. Request Android 13+ notifications permission (no-op on older versions)
   await notificationService.requestAndroidPermissions();
 
-  // Schedule for 3:00 PM (15:00 in 24-hour)
+  // 6. Schedule daily notifications:
+
+  // • 3:00 PM
   await notificationService.scheduleDailyNotification(
     id: 1,
-    hour: 15,
+    hour: 15, // 3 PM in 24-hour format
     minute: 0,
     title: 'Afternoon Reminder',
     body: 'Your 3 PM scheduled notification!',
   );
 
-  // Schedule for 7:00 PM (19:00 in 24-hour)
+  // • 7:00 PM
   await notificationService.scheduleDailyNotification(
     id: 2,
-    hour: 19,
+    hour: 19, // 7 PM in 24-hour format
     minute: 0,
     title: 'Evening Reminder',
     body: 'Your 7 PM scheduled notification!',
   );
 
-  runApp(MyApp());
+  // 7. Run your app
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

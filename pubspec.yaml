@@ -32,7 +32,6 @@ dependencies:
     sdk: flutter
   flutter_local_notifications: ^17.1.2
   timezone: ^0.9.4
-
   screenshot: ^3.0.0
   saver_gallery: ^4.0.1
   flutter_svg: ^2.0.17
