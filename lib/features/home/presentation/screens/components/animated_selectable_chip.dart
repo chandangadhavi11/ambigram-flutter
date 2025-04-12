@@ -45,7 +45,7 @@ class _AnimatedSelectableChipState extends State<AnimatedSelectableChip>
       if (status == AnimationStatus.completed) {
         // iOS-only, and only for first 3 chips (index = 0,1,2)
         if (Platform.isIOS && widget.index < 3) {
-          HapticFeedback.lightImpact();
+          // HapticFeedback.lightImpact();
         }
       }
     });
