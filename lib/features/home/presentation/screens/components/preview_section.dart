@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -214,7 +213,7 @@ class _PreviewSectionState extends State<PreviewSection> {
               width: double.infinity,
               height: 220,
               color: widget.backgroundColor,
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(12),
               // FittedBox with BoxFit.contain prevents cropping
               child: FittedBox(
                 fit: BoxFit.contain,
@@ -255,7 +254,7 @@ class _PreviewSectionState extends State<PreviewSection> {
                     // Construct the image widget:
                     final svgWidget = SvgPicture.memory(
                       bytes,
-                      height: 60,
+                      height: 300,
                       fit: BoxFit.contain,
                     );
 

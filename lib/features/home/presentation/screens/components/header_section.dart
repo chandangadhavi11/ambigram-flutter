@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animated_selectable_chip.dart';
 import 'package:flutter_application_1/core/constants/app_colors.dart';
 
-/// Header section that shows the "CREATE YOUR OWN AMBIGRAM" title,
-/// the user's remaining credits, and the horizontal list of chips.
 class HeaderSection extends StatefulWidget {
   final int credits;
   final List<String> chipLabels;
@@ -32,7 +29,6 @@ class _HeaderSectionState extends State<HeaderSection> {
   @override
   void initState() {
     super.initState();
-    // create a key for each label
     _chipKeys.addAll(widget.chipLabels.map((_) => GlobalKey()).toList());
   }
 
@@ -43,7 +39,6 @@ class _HeaderSectionState extends State<HeaderSection> {
   }
 
   void _onChipTap(int index) {
-    // Scroll the tapped chip into view
     final ctx = _chipKeys[index].currentContext;
     if (ctx != null) {
       Scrollable.ensureVisible(
@@ -52,8 +47,6 @@ class _HeaderSectionState extends State<HeaderSection> {
         alignment: 0.5,
       );
     }
-
-    // Notify parent
     widget.onChipSelected(index);
   }
 
@@ -65,7 +58,7 @@ class _HeaderSectionState extends State<HeaderSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          // space between two children
+          // space between the title area and the credit area
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             // Title area
@@ -120,21 +113,23 @@ class _HeaderSectionState extends State<HeaderSection> {
           ],
         ),
         const SizedBox(height: 16),
+        // Scrollable row of chips
         SingleChildScrollView(
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none, // <-- Make horizontal overflow visible
+          clipBehavior: Clip.none,
           child: Row(
             children: List.generate(widget.chipLabels.length, (index) {
               final label = widget.chipLabels[index];
               return Padding(
+                key: _chipKeys[index],
                 padding: const EdgeInsets.only(right: 8.0),
                 child: AnimatedSelectableChip(
-                  key: _chipKeys[index],
+                  index: index, // pass index
                   label: label,
-                  delay: Duration(milliseconds: 100 * index),
                   isSelected: widget.selectedChipIndex == index,
                   onTap: () => _onChipTap(index),
+                  delay: Duration(milliseconds: 200 * index),
                 ),
               );
             }),

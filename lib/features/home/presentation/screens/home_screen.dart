@@ -322,7 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     firstWord: _generatedFirstWord,
                     secondWord: _generatedSecondWord,
                     selectedChipIndex: _selectedChipIndex,
-                    showImageBackground: true,
+                    showImageBackground: false,
                   ),
                   const SizedBox(height: 16),
                   ColorSelectionSection(

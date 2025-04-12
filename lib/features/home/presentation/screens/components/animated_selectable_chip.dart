@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/core/constants/app_colors.dart';
@@ -8,6 +9,7 @@ class AnimatedSelectableChip extends StatefulWidget {
   final Duration delay;
   final bool isSelected;
   final VoidCallback onTap;
+  final int index; // <-- add this so we know which chip
 
   const AnimatedSelectableChip({
     Key? key,
@@ -15,6 +17,7 @@ class AnimatedSelectableChip extends StatefulWidget {
     required this.delay,
     required this.isSelected,
     required this.onTap,
+    required this.index, // <-- require in constructor
   }) : super(key: key);
 
   @override
@@ -36,6 +39,17 @@ class _AnimatedSelectableChipState extends State<AnimatedSelectableChip>
   @override
   void initState() {
     super.initState();
+
+    // Listen for animation completion
+    _fadeInController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        // iOS-only, and only for first 3 chips (index = 0,1,2)
+        if (Platform.isIOS && widget.index < 3) {
+          HapticFeedback.lightImpact();
+        }
+      }
+    });
+
     // Trigger the fade-in after [widget.delay]
     Future.delayed(widget.delay, () {
       if (mounted) _fadeInController.forward();
@@ -66,6 +80,7 @@ class _AnimatedSelectableChipState extends State<AnimatedSelectableChip>
       opacity: _fadeInAnimation,
       child: GestureDetector(
         onTap: () {
+          // Medium haptic on tap
           HapticFeedback.mediumImpact();
           widget.onTap();
         },
