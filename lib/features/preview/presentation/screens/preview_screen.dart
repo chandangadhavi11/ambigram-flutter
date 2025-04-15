@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
 import 'package:flutter_application_1/shared/widgets/custom_button.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:screenshot/screenshot.dart';
@@ -53,14 +55,40 @@ class _PreviewScreenState extends State<PreviewScreen> {
   /// Method channel to call native code to save images to gallery
   static const MethodChannel _methodChannel = MethodChannel('gallery_saver');
 
+  // -----------------------------------------
+  // InterstitialAd-related fields
+  // -----------------------------------------
+  InterstitialAd? _interstitialAd;
+  bool _isAdLoaded = false;
+
+  /// Use the official test adUnitId during development. Replace with your own later.
+  final String _testInterstitialAdUnitId =
+      Platform.isAndroid
+          ? 'ca-app-pub-3940256099942544/1033173712' // Android test unit
+          : 'ca-app-pub-3940256099942544/4411468910'; // iOS test unit
+
+  /// Loader delay (in seconds) before showing the interstitial ad
+  final Duration _loaderDelay = const Duration(seconds: 1);
+
+  // -----------------------------------------
+  // BannerAd-related fields
+  // -----------------------------------------
+  BannerAd? _bannerAd;
+  bool _isBannerAdLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _maybeLoadImages();
+    _loadInterstitialAd();
+    _loadBannerAd();
+
+    // Listen for connectivity changes
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
+      connectivityResults,
     ) {
-      if (results.contains(ConnectivityResult.none)) {
+      // If the list contains ConnectivityResult.none, treat it as "no internet"
+      if (connectivityResults.contains(ConnectivityResult.none)) {
         setState(() {
           _noInternet = true;
           _imagesFuture = null;
@@ -78,18 +106,115 @@ class _PreviewScreenState extends State<PreviewScreen> {
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
+    _interstitialAd?.dispose();
+    _bannerAd?.dispose();
     super.dispose();
   }
 
-  /// If there's a word to preview, attempt to load images.
+  // -----------------------------------------
+  // Load the InterstitialAd
+  // -----------------------------------------
+  void _loadInterstitialAd() {
+    InterstitialAd.load(
+      adUnitId: _testInterstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (InterstitialAd ad) {
+          debugPrint('Interstitial ad loaded.');
+          _interstitialAd = ad;
+          _isAdLoaded = true;
+
+          // Set callbacks for full screen content
+          _interstitialAd
+              ?.fullScreenContentCallback = FullScreenContentCallback(
+            onAdShowedFullScreenContent: (ad) => debugPrint('Ad shown.'),
+            onAdDismissedFullScreenContent: (ad) {
+              debugPrint('Ad dismissed.');
+              ad.dispose();
+              // Optionally load another ad if you want to show multiple times
+              _loadInterstitialAd();
+            },
+            onAdFailedToShowFullScreenContent: (ad, err) {
+              debugPrint('Failed to show interstitial: $err');
+              ad.dispose();
+              // Optionally load another ad here
+              _loadInterstitialAd();
+            },
+            onAdImpression: (ad) => debugPrint('$ad impression occurred.'),
+            onAdClicked: (ad) => debugPrint('Ad clicked.'),
+          );
+        },
+        onAdFailedToLoad: (LoadAdError error) {
+          debugPrint('Interstitial ad failed to load: $error');
+          _isAdLoaded = false;
+        },
+      ),
+    );
+  }
+
+  // -----------------------------------------
+  // Show the InterstitialAd (with a loader delay)
+  // -----------------------------------------
+  Future<void> _showInterstitialAd() async {
+    if (_interstitialAd != null && _isAdLoaded) {
+      // 1) Show loader
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // 2) Wait the specified delay
+      await Future.delayed(_loaderDelay);
+
+      // 3) Dismiss the loader
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      // 4) Finally show the ad
+      _interstitialAd!.show();
+      _isAdLoaded = false; // The ad can only be shown once
+    } else {
+      debugPrint('Interstitial ad not ready yet.');
+    }
+  }
+
+  // -----------------------------------------
+  // Load the BannerAd
+  // -----------------------------------------
+  void _loadBannerAd() {
+    _bannerAd = BannerAd(
+      size: AdSize.largeBanner, // Use a large banner (320x100)
+      adUnitId:
+          Platform.isAndroid
+              ? 'ca-app-pub-3940256099942544/6300978111' // Android test banner unit
+              : 'ca-app-pub-3940256099942544/2934735716', // iOS test banner unit
+      listener: BannerAdListener(
+        onAdLoaded: (Ad ad) {
+          debugPrint('Banner ad loaded.');
+          setState(() {
+            _isBannerAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
+          debugPrint('Banner ad failed to load: $error');
+          ad.dispose();
+        },
+      ),
+      request: const AdRequest(),
+    )..load();
+  }
+
+  // -----------------------------------------
+  // Letters logic / fetching
+  // -----------------------------------------
   Future<void> _maybeLoadImages() async {
     final imageCount =
         widget.firstWord.isNotEmpty ? widget.firstWord.length : 0;
-
     if (imageCount == 0) return; // No images needed
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult == ConnectivityResult.none) {
+    final connectivityResults = await Connectivity().checkConnectivity();
+    if (connectivityResults == ConnectivityResult.none) {
       setState(() {
         _noInternet = true;
         _imagesFuture = null;
@@ -102,7 +227,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
-  /// Fetch all letter-pairs in parallel. Returns a list of SVG bytes (or `null` if any fail).
   Future<List<Uint8List?>> _loadAllSvgs(int imageCount) async {
     final fetchFutures = <Future<Uint8List?>>[];
     for (int i = 0; i < imageCount; i++) {
@@ -111,12 +235,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
     return Future.wait(fetchFutures);
   }
 
-  /// Fetch a single letter-pair’s SVG from the server and return its bytes (or `null` on error).
   Future<Uint8List?> _fetchSvgBytes(int i) async {
     try {
       final firstLetter = widget.firstWord[i].toLowerCase();
 
-      // If secondWord is empty, we use the reversed firstWord letter.
+      // If secondWord is empty, use reversed firstWord letter.
       final secondLetter =
           widget.secondWord.isNotEmpty
               ? widget.secondWord[widget.secondWord.length - 1 - i]
@@ -160,7 +283,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
-  /// Share the captured screenshot using share_plus
+  /// Share the captured screenshot
   Future<void> _shareScreenshot() async {
     // Ensure we have a captured image
     if (_capturedImage == null) {
@@ -184,6 +307,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
         text:
             'Check out my ambigram! Download the app here: https://example.com',
       );
+
+      // Once user has completed sharing, show interstitial if loaded
+      _showInterstitialAd();
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -191,13 +317,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
-  /// Use a native MethodChannel to save the screenshot to the gallery
+  /// Save the screenshot to the gallery
   Future<void> _saveToGallery() async {
     // Capture a fresh screenshot if needed
     if (_capturedImage == null) {
       await _captureScreenshot();
     }
-
     if (_capturedImage == null) {
       ScaffoldMessenger.of(
         context,
@@ -211,6 +336,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Image saved to gallery successfully.')),
       );
+
+      // After saving, show interstitial if loaded
+      _showInterstitialAd();
     } on PlatformException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving image to gallery: $e')),
@@ -220,21 +348,81 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Derive the same background color used in the home screen's preview
     final backgroundColor =
         ColorPalette.backgroundChoices(context)[widget
             .selectedColorIndex].color;
-
-    // This is the same “imageCount” logic from your PreviewSection
     final imageCount =
         widget.firstWord.isNotEmpty ? widget.firstWord.length : 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Preview Screen')),
+      /// Show the banner in the bottomNavigationBar when it’s loaded
+      bottomNavigationBar: SafeArea(
+        child: _isBannerAdLoaded
+            ? Container(
+                color: Colors.transparent,
+                width: _bannerAd!.size.width.toDouble(),
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
+              )
+            : const SizedBox.shrink(),
+      ),
+
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
             children: [
+              // Custom back button at top-left
+              Padding(
+                padding: const EdgeInsets.only(left: 8, top: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+
+              // Texts at the top, left aligned
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'YOU CAN DOWNLOAD THE',
+                        style: TextStyle(
+                          color: Color(0xFF959398),
+                          fontSize: 12,
+                          fontFamily: 'Averta Demo PE Cutted Demo',
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 1,
+                        ),
+                        textAlign: TextAlign.left,
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'PREVIEW',
+                        style: TextStyle(
+                          color: Color(0xFF2B2733),
+                          fontSize: 20,
+                          fontFamily: 'Averta Demo PE Cutted Demo',
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 4,
+                        ),
+                        textAlign: TextAlign.left,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               // Wrap our preview in Screenshot so we can capture it
               Screenshot(
                 controller: _screenshotController,
@@ -253,7 +441,18 @@ class _PreviewScreenState extends State<PreviewScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: AmbigramButton(
-                  onPressed: _shareScreenshot,
+                  onPressed:
+                      _noInternet
+                          ? () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'No internet connection. Cannot share.',
+                                ),
+                              ),
+                            );
+                          }
+                          : _shareScreenshot,
                   text: 'SHARE YOUR AMBIGRAM',
                 ),
               ),
@@ -261,7 +460,18 @@ class _PreviewScreenState extends State<PreviewScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: AmbigramButton(
-                  onPressed: _saveToGallery,
+                  onPressed:
+                      _noInternet
+                          ? () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'No internet connection. Cannot save.',
+                                ),
+                              ),
+                            );
+                          }
+                          : _saveToGallery,
                   text: 'SAVE IN GALLERY',
                 ),
               ),
@@ -272,9 +482,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
     );
   }
 
-  /// Core preview-building code, copied from _PreviewSectionState for identical look & feel
+  /// Core preview-building code
   Widget _buildPreview(Color backgroundColor, int imageCount) {
-    // If user hasn't generated anything yet
     if (imageCount == 0) {
       return Container(
         width: double.infinity,
@@ -288,7 +497,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
       );
     }
 
-    // If we have no internet
     if (_noInternet) {
       return Container(
         width: double.infinity,
@@ -302,11 +510,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
       );
     }
 
-    // Show a FutureBuilder that attempts to load all the SVGs
     return FutureBuilder<List<Uint8List?>>(
       future: _imagesFuture,
       builder: (context, snapshot) {
-        // If _imagesFuture not set or is still loading
         if (_imagesFuture == null ||
             snapshot.connectionState == ConnectionState.waiting ||
             !snapshot.hasData) {
@@ -322,7 +528,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
           );
         }
 
-        // Data has arrived
         final svgBytesList = snapshot.data!;
         return Container(
           width: double.infinity,
@@ -347,7 +552,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 final isFlipped = firstLetter.compareTo(secondLetter) > 0;
                 final bytes = svgBytesList[index];
 
-                // If null, show placeholder "ERR"
+                // If null, show placeholder
                 if (bytes == null) {
                   return Container(
                     width: 60,
@@ -362,14 +567,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   );
                 }
 
-                // Otherwise, show the raw SVG
                 final svgWidget = SvgPicture.memory(
                   bytes,
                   height: 300,
                   fit: BoxFit.contain,
                 );
 
-                // Flip it if needed
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 0),
                   padding: const EdgeInsets.all(4),

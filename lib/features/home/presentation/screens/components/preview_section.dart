@@ -162,7 +162,11 @@ class _PreviewSectionState extends State<PreviewSection> {
         alignment: Alignment.center,
         child: const Text(
           "CLICK ON GENERATE TO PREVIEW",
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            color: Colors.black,
+          ),
         ),
       );
     }
