@@ -1,33 +1,20 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+// Replace with your actual paths:
 import 'package:flutter_application_1/core/constants/app_colors.dart';
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
 import 'package:flutter_application_1/features/preview/presentation/screens/preview_screen.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_application_1/shared/widgets/custom_button.dart';
 
 import 'components/header_section.dart';
 import 'components/preview_section.dart';
 import 'components/color_selection_section.dart';
 import 'components/input_section.dart';
-
-/// Basic example of an app that loads [HomeScreen].
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Ambigram Creator',
-      themeMode: ThemeMode.system,
-      theme: ThemeData(brightness: Brightness.light),
-      darkTheme: ThemeData(brightness: Brightness.dark),
-      home: const HomeScreen(),
-    );
-  }
-}
 
 /// The main screen that hosts all the sections and orchestrates the logic.
 class HomeScreen extends StatefulWidget {
@@ -38,9 +25,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ---------------------------------------------------------------------------
-  // 1) THE CHIP LABELS & SELECTED CHIP INDEX ARE NOW STORED HERE
-  // ---------------------------------------------------------------------------
   final List<String> _chipLabels = [
     'ANTIOGLYPH',
     'ESCHERESQUE',
@@ -52,39 +36,72 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
   int _selectedChipIndex = 0;
 
-  /// This will determine how many images get displayed in the PreviewSection.
   int _imageCount = 0;
-
-  /// Track whether the user has already generated an ambigram
-  /// (used to switch button label to "DOWNLOAD AMBIGRAM").
   bool _hasGenerated = false;
-
-  /// Store and retrieve credits with SharedPreferences
   int _credits = 25;
 
-  /// Keep track of the user-selected background color for the preview.
   int _selectedColorIndex = 0;
   late List<NamedColor> _colors;
 
-  /// We'll store the words that the user generated so we can build the correct SVG URLs.
   String _generatedFirstWord = '';
   String _generatedSecondWord = '';
+
+  /// AdMob Banner
+  BannerAd? _bannerAd;
+  bool _isBannerAdReady = false;
 
   @override
   void initState() {
     super.initState();
     _loadCredits();
+    _initGoogleMobileAds();
+    _createBannerAd();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Initialize color choices only once.
     if (!mounted) return;
     _colors = ColorPalette.backgroundChoices(context);
   }
 
-  /// Load credits from SharedPreferences or set to 25 by default.
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initGoogleMobileAds() async {
+    // Initialize the Mobile Ads SDK
+    await MobileAds.instance.initialize();
+  }
+
+  void _createBannerAd() {
+    _bannerAd = BannerAd(
+      // Use your real Ad Unit IDs in production.
+      // The below are test Ad Unit IDs.
+      adUnitId:
+          Platform.isAndroid
+              ? 'ca-app-pub-3940256099942544/6300978111'
+              : 'ca-app-pub-3940256099942544/2934735716',
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (Ad ad) {
+          setState(() {
+            _isBannerAdReady = true;
+          });
+        },
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
+          debugPrint('BannerAd failed to load: $error');
+          _isBannerAdReady = false;
+          ad.dispose();
+        },
+      ),
+    );
+    _bannerAd?.load();
+  }
+
   Future<void> _loadCredits() async {
     final prefs = await SharedPreferences.getInstance();
     final storedCredits = prefs.getInt('credit_count') ?? 25;
@@ -93,13 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Save the updated credits to SharedPreferences.
   Future<void> _saveCredits() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('credit_count', _credits);
   }
 
-  /// Callback fired from the InputSection's button **after** validations pass.
   void _handleGenerate(String firstWord, String secondWord) async {
     if (_credits > 0) {
       setState(() {
@@ -107,16 +122,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _generatedSecondWord = secondWord;
         _imageCount = firstWord.length;
         _hasGenerated = true;
-        _credits -= 1; // Decrement credit
+        _credits--;
       });
       await _saveCredits();
     } else {
-      // Show bottom sheet if user has 0 credits
       _showCreditLimitModal();
     }
   }
 
-  /// When user has 0 credits, display the "CREDIT LIMIT REACHED" bottom sheet.
   void _showCreditLimitModal() {
     showModalBottomSheet(
       context: context,
@@ -126,7 +139,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       builder: (BuildContext context) {
         final deviceWidth = MediaQuery.of(context).size.width;
-
         return SingleChildScrollView(
           child: Container(
             width: deviceWidth,
@@ -212,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             _credits += 5;
                           });
                           await _saveCredits();
-                          Navigator.of(context).pop(); // Close bottom sheet
+                          Navigator.of(context).pop();
                         },
                       ),
                       const SizedBox(height: 12),
@@ -225,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             _credits = 999;
                           });
                           _saveCredits();
-                          Navigator.of(context).pop(); // Close bottom sheet
+                          Navigator.of(context).pop();
                         },
                       ),
                       const SizedBox(height: 16),
@@ -240,14 +252,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Color selection callback from the ColorSelectionSection.
   void _onColorSelected(int index) {
     setState(() {
       _selectedColorIndex = index;
     });
   }
 
-  /// Chip selection callback for the HeaderSection.
   void _onChipSelected(int index) async {
     if (_credits > 0) {
       setState(() {
@@ -257,16 +267,12 @@ class _HomeScreenState extends State<HomeScreen> {
       await _saveCredits();
     } else {
       _showCreditLimitModal();
-      // If you don't want to allow chip switching at 0 credits, comment out:
       setState(() {
         _selectedChipIndex = index;
       });
     }
   }
 
-  /// Called once the user wants to "DOWNLOAD AMBIGRAM" (i.e. second press).
-  /// Here we do a simple Navigator push. If you’re using go_router or named
-  /// routes, replace this accordingly.
   void _handleDownloadTap() {
     Navigator.push(
       context,
@@ -282,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// When user modifies text after a successful "GENERATE," revert to "GENERATE" button
   void _handleInputChanged() {
     if (_hasGenerated) {
       setState(() {
@@ -293,7 +298,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Safely handle out-of-range index for the background color
     final backgroundColor =
         (_selectedColorIndex >= 0 && _selectedColorIndex < _colors.length)
             ? _colors[_selectedColorIndex].color
@@ -301,46 +305,66 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: double.infinity),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  HeaderSection(
-                    credits: _credits,
-                    chipLabels: _chipLabels,
-                    selectedChipIndex: _selectedChipIndex,
-                    onChipSelected: _onChipSelected,
+        child: Column(
+          children: [
+            // Wrap main content in Expanded + SingleChildScrollView
+            Expanded(
+              child: SingleChildScrollView(
+                // Add extra bottom padding to create space above the ad
+                padding: const EdgeInsets.only(bottom: 72),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
                   ),
-                  const SizedBox(height: 24),
-                  PreviewSection(
-                    imageCount: _imageCount,
-                    backgroundColor: backgroundColor,
-                    firstWord: _generatedFirstWord,
-                    secondWord: _generatedSecondWord,
-                    selectedChipIndex: _selectedChipIndex,
-                    showImageBackground: false,
+                  child: Column(
+                    children: [
+                      HeaderSection(
+                        credits: _credits,
+                        chipLabels: _chipLabels,
+                        selectedChipIndex: _selectedChipIndex,
+                        onChipSelected: _onChipSelected,
+                      ),
+                      const SizedBox(height: 24),
+                      PreviewSection(
+                        imageCount: _imageCount,
+                        backgroundColor: backgroundColor,
+                        firstWord: _generatedFirstWord,
+                        secondWord: _generatedSecondWord,
+                        selectedChipIndex: _selectedChipIndex,
+                        showImageBackground: false,
+                      ),
+                      const SizedBox(height: 16),
+                      ColorSelectionSection(
+                        selectedColorIndex: _selectedColorIndex,
+                        onColorSelected: _onColorSelected,
+                      ),
+                      const SizedBox(height: 16),
+                      InputSection(
+                        onGenerate: _handleGenerate,
+                        hasGenerated: _hasGenerated,
+                        onDownload: _handleDownloadTap,
+                        onInputChanged: _handleInputChanged,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  ColorSelectionSection(
-                    selectedColorIndex: _selectedColorIndex,
-                    onColorSelected: _onColorSelected,
-                  ),
-                  const SizedBox(height: 16),
-                  InputSection(
-                    onGenerate: _handleGenerate,
-                    hasGenerated: _hasGenerated,
-                    onDownload: _handleDownloadTap,
-                    onInputChanged: _handleInputChanged,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
+      ),
+      // BannerAd pinned at the bottom
+      bottomNavigationBar: SafeArea(
+        child:
+            _isBannerAdReady
+                ? Container(
+                  color: Colors.transparent,
+                  width: _bannerAd!.size.width.toDouble(),
+                  height: _bannerAd!.size.height.toDouble(),
+                  child: AdWidget(ad: _bannerAd!),
+                )
+                : const SizedBox.shrink(),
       ),
     );
   }
