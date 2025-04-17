@@ -50,12 +50,18 @@ class _HomeScreenState extends State<HomeScreen> {
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
 
+  /// Rewarded Ad
+  RewardedAd? _rewardedAd; // <--- ADD THIS
+
   @override
   void initState() {
     super.initState();
     _loadCredits();
     _initGoogleMobileAds();
     _createBannerAd();
+
+    /// Load the Rewarded Ad as soon as the app initializes
+    _loadRewardedAd(); // <--- ADD THIS
   }
 
   @override
@@ -100,6 +106,44 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     _bannerAd?.load();
+  }
+
+  /// Load Rewarded Ad method
+  void _loadRewardedAd() {
+    RewardedAd.load(
+      // Use test IDs for testing. Replace with your real IDs when ready.
+      adUnitId:
+          Platform.isAndroid
+              ? 'ca-app-pub-3940256099942544/5224354917' // Test ID for Android
+              : 'ca-app-pub-3940256099942544/1712485313', // Test ID for iOS
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (RewardedAd ad) {
+          debugPrint('Rewarded Ad loaded.');
+          _rewardedAd = ad;
+
+          // Set up callbacks for full-screen events
+          _rewardedAd?.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              debugPrint('Rewarded Ad dismissed.');
+              ad.dispose();
+              // Load a new ad for next time.
+              _loadRewardedAd();
+            },
+            onAdFailedToShowFullScreenContent: (ad, err) {
+              debugPrint('Failed to show Rewarded Ad: $err');
+              ad.dispose();
+              // Load a new ad for next time.
+              _loadRewardedAd();
+            },
+          );
+        },
+        onAdFailedToLoad: (LoadAdError error) {
+          debugPrint('Failed to load Rewarded Ad: $error');
+          _rewardedAd = null;
+        },
+      ),
+    );
   }
 
   Future<void> _loadCredits() async {
@@ -217,14 +261,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       AmbigramButton(
                         text: "WATCH AD (+5)",
-                        onPressed: () async {
+                        onPressed: () {
                           HapticFeedback.mediumImpact();
-                          // For demonstration, just add 5 credits instantly
-                          setState(() {
-                            _credits += 5;
-                          });
-                          await _saveCredits();
-                          Navigator.of(context).pop();
+                          _showRewardedAd(); // <--- USE METHOD TO SHOW THE AD
                         },
                       ),
                       const SizedBox(height: 12),
@@ -250,6 +289,30 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  /// Show the Rewarded Ad
+  void _showRewardedAd() async {
+    if (_rewardedAd == null) {
+      debugPrint('Rewarded Ad not ready.');
+      Navigator.of(context).pop();
+      return;
+    }
+
+    // Show the ad
+    _rewardedAd?.show(
+      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) async {
+        // The user watched the video; reward them.
+        setState(() {
+          _credits += 5;
+        });
+        await _saveCredits();
+        debugPrint('User rewarded with ${reward.amount} ${reward.type}');
+      },
+    );
+    // Once the ad is shown, close the bottom sheet.
+    Navigator.of(context).pop();
+    _rewardedAd = null;
   }
 
   void _onColorSelected(int index) {

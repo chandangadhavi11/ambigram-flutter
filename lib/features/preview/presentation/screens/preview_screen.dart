@@ -61,14 +61,15 @@ class _PreviewScreenState extends State<PreviewScreen> {
   InterstitialAd? _interstitialAd;
   bool _isAdLoaded = false;
 
-  /// Use the official test adUnitId during development. Replace with your own later.
+  /// Official test adUnitId during development (replace with your own in production)
   final String _testInterstitialAdUnitId =
       Platform.isAndroid
           ? 'ca-app-pub-3940256099942544/1033173712' // Android test unit
           : 'ca-app-pub-3940256099942544/4411468910'; // iOS test unit
 
-  /// Loader delay (in seconds) before showing the interstitial ad
-  final Duration _loaderDelay = const Duration(seconds: 1);
+  // Simple counter to track how many times user shares/saves
+  // We'll only show an interstitial after every 3 actions.
+  int _ambigramActionsCount = 0;
 
   // -----------------------------------------
   // BannerAd-related fields
@@ -87,7 +88,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       connectivityResults,
     ) {
-      // If the list contains ConnectivityResult.none, treat it as "no internet"
       if (connectivityResults.contains(ConnectivityResult.none)) {
         setState(() {
           _noInternet = true;
@@ -153,25 +153,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   // -----------------------------------------
-  // Show the InterstitialAd (with a loader delay)
+  // Show the InterstitialAd if loaded + freq. cap
   // -----------------------------------------
-  Future<void> _showInterstitialAd() async {
+  Future<void> _tryShowInterstitialAd() async {
     if (_interstitialAd != null && _isAdLoaded) {
-      // 1) Show loader
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
-      );
-
-      // 2) Wait the specified delay
-      await Future.delayed(_loaderDelay);
-
-      // 3) Dismiss the loader
-      if (!mounted) return;
-      Navigator.of(context).pop();
-
-      // 4) Finally show the ad
       _interstitialAd!.show();
       _isAdLoaded = false; // The ad can only be shown once
     } else {
@@ -184,7 +169,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // -----------------------------------------
   void _loadBannerAd() {
     _bannerAd = BannerAd(
-      size: AdSize.largeBanner, // Use a large banner (320x100)
+      size: AdSize.largeBanner, // Use a large banner (e.g. 320x100)
       adUnitId:
           Platform.isAndroid
               ? 'ca-app-pub-3940256099942544/6300978111' // Android test banner unit
@@ -192,9 +177,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       listener: BannerAdListener(
         onAdLoaded: (Ad ad) {
           debugPrint('Banner ad loaded.');
-          setState(() {
-            _isBannerAdLoaded = true;
-          });
+          setState(() => _isBannerAdLoaded = true);
         },
         onAdFailedToLoad: (Ad ad, LoadAdError error) {
           debugPrint('Banner ad failed to load: $error');
@@ -285,7 +268,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   /// Share the captured screenshot
   Future<void> _shareScreenshot() async {
-    // Ensure we have a captured image
     if (_capturedImage == null) {
       await _captureScreenshot();
     }
@@ -308,8 +290,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
             'Check out my ambigram! Download the app here: https://example.com',
       );
 
-      // Once user has completed sharing, show interstitial if loaded
-      _showInterstitialAd();
+      // Increase the actions counter.
+      _ambigramActionsCount++;
+      // If the user has hit 3 actions, show the interstitial (frequency cap).
+      if (_ambigramActionsCount % 2 == 0) {
+        _tryShowInterstitialAd();
+      }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -319,7 +305,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   /// Save the screenshot to the gallery
   Future<void> _saveToGallery() async {
-    // Capture a fresh screenshot if needed
     if (_capturedImage == null) {
       await _captureScreenshot();
     }
@@ -337,8 +322,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
         const SnackBar(content: Text('Image saved to gallery successfully.')),
       );
 
-      // After saving, show interstitial if loaded
-      _showInterstitialAd();
+      // Increase the actions counter.
+      _ambigramActionsCount++;
+      // Show the interstitial only after every 3 successful saves or shares.
+      if (_ambigramActionsCount % 2 == 0) {
+        _tryShowInterstitialAd();
+      }
     } on PlatformException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving image to gallery: $e')),
@@ -355,18 +344,17 @@ class _PreviewScreenState extends State<PreviewScreen> {
         widget.firstWord.isNotEmpty ? widget.firstWord.length : 0;
 
     return Scaffold(
-      /// Show the banner in the bottomNavigationBar when it’s loaded
       bottomNavigationBar: SafeArea(
-        child: _isBannerAdLoaded
-            ? Container(
-                color: Colors.transparent,
-                width: _bannerAd!.size.width.toDouble(),
-                height: _bannerAd!.size.height.toDouble(),
-                child: AdWidget(ad: _bannerAd!),
-              )
-            : const SizedBox.shrink(),
+        child:
+            _isBannerAdLoaded
+                ? Container(
+                  color: Colors.transparent,
+                  width: _bannerAd!.size.width.toDouble(),
+                  height: _bannerAd!.size.height.toDouble(),
+                  child: AdWidget(ad: _bannerAd!),
+                )
+                : const SizedBox.shrink(),
       ),
-
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -423,7 +411,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 ),
               ),
 
-              // Wrap our preview in Screenshot so we can capture it
+              // Wrap preview in Screenshot so we can capture it
               Screenshot(
                 controller: _screenshotController,
                 child: GestureDetector(

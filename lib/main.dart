@@ -40,8 +40,9 @@ void main() async {
     id: 1,
     hour: 15, // 3 PM in 24-hour format
     minute: 0,
-    title: 'Afternoon Reminder',
-    body: 'Your 3 PM scheduled notification!',
+    title: 'Hello, Creator!',
+    body:
+        'It’s a perfect time to spark a little creativity. Make a new ambigram to brighten your day!',
   );
 
   // • 7:00 PM
@@ -49,8 +50,9 @@ void main() async {
     id: 2,
     hour: 19, // 7 PM in 24-hour format
     minute: 0,
-    title: 'Evening Reminder',
-    body: 'Your 7 PM scheduled notification!',
+    title: 'Hope You’re Doing Well!',
+    body:
+        'Unwind with a dash of inspiration. Hop in and design another beautiful ambigram this evening.',
   );
 
   // 7. Run your app
