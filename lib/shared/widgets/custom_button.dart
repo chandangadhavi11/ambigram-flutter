@@ -47,13 +47,26 @@ class _AmbigramButtonState extends State<AmbigramButton> {
     // Trigger the main onPressed callback.
     widget.onPressed();
     // Also call onClick if it is provided.
-    if (widget.onClick != null) {
-      widget.onClick!();
-    }
+    widget.onClick?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Keep the original color (#2B2734) in light mode,
+    // and use the theme's primary color in dark mode (customize as desired).
+    final Color backgroundColor =
+        theme.brightness == Brightness.light
+            ? const Color(0xFF2B2734)
+            : theme.colorScheme.primary;
+
+    // Keep white text in light mode and adapt to onPrimary in dark mode.
+    final Color textColor =
+        theme.brightness == Brightness.light
+            ? Colors.white
+            : theme.colorScheme.onPrimary;
+
     return GestureDetector(
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
@@ -66,12 +79,12 @@ class _AmbigramButtonState extends State<AmbigramButton> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 12),
           alignment: Alignment.center,
-          decoration: const BoxDecoration(color: Color(0xFF2B2734)),
+          decoration: BoxDecoration(color: backgroundColor),
           child: Text(
             widget.text,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: textColor,
               fontSize: 12,
               fontFamily: 'Averta Demo PE Cutted Demo',
               fontWeight: FontWeight.w400,

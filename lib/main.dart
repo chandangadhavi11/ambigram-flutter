@@ -5,47 +5,58 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'dart:io' show Platform;
 import 'package:flutter_application_1/features/notifications/notifications.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize Google Mobile Ads
+  await MobileAds.instance.initialize();
+
   WidgetsFlutterBinding.ensureInitialized();
 
   // 1. Initialize timezone data
   tz.initializeTimeZones();
-  // 2. Optional: set local location
-  tz.setLocalLocation(tz.getLocation('America/Detroit'));
-  // or simply tz.setLocalLocation(tz.local);
+
+  // 2. (Optional) Set local location
+  tz.setLocalLocation(tz.getLocation(tz.local.name));
+  // or simply: tz.setLocalLocation(tz.local);
 
   // 3. Initialize notifications
   final notificationService = NotificationService();
   await notificationService.initNotifications();
 
-  // (Optional) Request iOS permissions
+  // 4. Request iOS permissions
   if (Platform.isIOS) {
     await notificationService.requestIOSPermissions();
   }
-  // (Optional) Request Android 13+ notifications permission
-  // This will prompt the user on Android 13+ only
+
+  // 5. Request Android 13+ notifications permission (no-op on older versions)
   await notificationService.requestAndroidPermissions();
 
-  // Schedule for 3:00 PM (15:00 in 24-hour)
+  // 6. Schedule daily notifications:
+
+  // • 3:00 PM
   await notificationService.scheduleDailyNotification(
     id: 1,
-    hour: 15,
+    hour: 15, // 3 PM in 24-hour format
     minute: 0,
-    title: 'Afternoon Reminder',
-    body: 'Your 3 PM scheduled notification!',
+    title: 'Hello, Creator!',
+    body:
+        'It’s a perfect time to spark a little creativity. Make a new ambigram to brighten your day!',
   );
 
-  // Schedule for 7:00 PM (19:00 in 24-hour)
+  // • 7:00 PM
   await notificationService.scheduleDailyNotification(
     id: 2,
-    hour: 19,
+    hour: 19, // 7 PM in 24-hour format
     minute: 0,
-    title: 'Evening Reminder',
-    body: 'Your 7 PM scheduled notification!',
+    title: 'Hope You’re Doing Well!',
+    body:
+        'Unwind with a dash of inspiration. Hop in and design another beautiful ambigram this evening.',
   );
 
-  runApp(MyApp());
+  // 7. Run your app
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -54,8 +65,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Industry-Level Flutter App',
+      title: 'Ambigram',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       routerDelegate: appRouter.routerDelegate,
       routeInformationParser: appRouter.routeInformationParser,
       routeInformationProvider: appRouter.routeInformationProvider,
