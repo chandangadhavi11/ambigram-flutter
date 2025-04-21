@@ -357,20 +357,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     children: const [
                       Text(
                         'YOU CAN DOWNLOAD THE',
-                        style: TextStyle(
-                          color: Color(0xFF959398),
-                          fontSize: 12,
-                          letterSpacing: 1,
-                        ),
+                        style: TextStyle(fontSize: 12, letterSpacing: 1),
                       ),
                       SizedBox(height: 4),
                       Text(
                         'PREVIEW',
-                        style: TextStyle(
-                          color: Color(0xFF2B2733),
-                          fontSize: 20,
-                          letterSpacing: 4,
-                        ),
+                        style: TextStyle(fontSize: 20, letterSpacing: 4),
                       ),
                     ],
                   ),

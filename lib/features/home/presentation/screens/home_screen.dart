@@ -337,8 +337,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final info = await PackageInfo.fromPlatform();
     final localBuild = int.tryParse(info.buildNumber) ?? 1;
 
-    print('Local build: $localBuild');
-
     final minBuild =
         Platform.isAndroid
             ? _remoteConfig.getInt('min_android_build')

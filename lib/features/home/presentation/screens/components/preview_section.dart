@@ -205,7 +205,11 @@ class _PreviewSectionState extends State<PreviewSection> {
                 alignment: Alignment.center,
                 child: const Text(
                   "LOADING...",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black,
+                  ),
                 ),
               );
             }
