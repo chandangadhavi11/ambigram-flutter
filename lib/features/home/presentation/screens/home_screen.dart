@@ -1,3 +1,4 @@
+// home_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -21,13 +22,12 @@ import 'components/input_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ───────────────────────── Remote‑Config defaults (ads/credits) ─────────────────────────
+  // ───────────────────────── Remote‑Config defaults ─────────────────────────
   static const _defAndroidBanner = 'ca-app-pub-3940256099942544/6300978111';
   static const _defIosBanner = 'ca-app-pub-3940256099942544/2934735716';
   static const _defAndroidReward = 'ca-app-pub-3940256099942544/5224354917';
@@ -35,25 +35,19 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _defChips =
       'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
   static const _defInitialCredits = 25;
-
   static const _defColorJson = '''
-  [
-    {"name":"Off White","color":"#FAFAFA"},
-    {"name":"Pink","color":"#FFC0CB"},
-    {"name":"Baby Blue","color":"#ADD8E6"},
-    {"name":"Mint Green","color":"#AAF0D1"},
-    {"name":"Lavender","color":"#E6E6FA"},
-    {"name":"Peach","color":"#FFDAB9"},
-    {"name":"Lemon Chiffon","color":"#FFFACD"},
-    {"name":"Turquoise","color":"#AFEEEE"}
-  ]''';
+  [{"name":"Off White","color":"#FAFAFA"},{"name":"Pink","color":"#FFC0CB"}]''';
 
-  // ───────────────────────── Force‑update defaults ─────────────────────────
   static const _defMinAndroidBuild = 1;
   static const _defMinIosBuild = 1;
-  static const _defAndroidUrl =
+
+  static const _defAndroidStoreUrl =
       'https://play.google.com/store/apps/details?id=com.ambigram.app';
-  static const _defIosUrl = 'https://apps.apple.com/app/id123456789';
+  static const _defIosStoreUrl = 'https://apps.apple.com/app/id123456789';
+
+  static const _defShowBuy = true;
+  static const _defAndroidBuyUrl = _defAndroidStoreUrl;
+  static const _defIosBuyUrl = _defIosStoreUrl;
 
   // ───────────────────────── Remote‑controlled values ─────────────────────────
   late String _androidBannerId = _defAndroidBanner;
@@ -65,31 +59,30 @@ class _HomeScreenState extends State<HomeScreen> {
   int _remoteInitialCredits = _defInitialCredits;
   String _backgroundColorJson = _defColorJson;
 
+  // buy button
+  bool _showBuyButton = _defShowBuy;
+  String _buyUrl = Platform.isAndroid ? _defAndroidBuyUrl : _defIosBuyUrl;
+
   // ───────────────────────── UI / runtime state ─────────────────────────
   int _selectedChipIndex = 0;
   int _imageCount = 0;
   bool _hasGenerated = false;
-
   int _credits = _defInitialCredits;
   int _selectedColorIndex = 0;
-  List<NamedColor> _colors = ColorPalette.fromRemote(
-    _defColorJson,
-  ); // 👈 initialise
+  List<NamedColor> _colors = ColorPalette.fromRemote(_defColorJson);
 
-  String _generatedFirstWord = '';
-  String _generatedSecondWord = '';
+  String _firstWord = '', _secondWord = '';
 
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
   RewardedAd? _rewardedAd;
 
-  // Remote‑Config & listener
-  final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
+  final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
   StreamSubscription<RemoteConfigUpdate>? _rcSub;
 
-  // ───────────────────────── Force‑update state ─────────────────────────
+  // force‑update
   bool _mustUpdate = false;
-  String _storeUrl = _defAndroidUrl;
+  String _storeUrl = _defAndroidStoreUrl;
 
   // ───────────────────────── lifecycle ─────────────────────────
   @override
@@ -104,23 +97,16 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadCredits();
     _createBannerAd();
     _loadRewardedAd();
-
-    _rcSub = _remoteConfig.onConfigUpdated.listen((update) async {
-      try {
-        await _remoteConfig.activate();
-        _applyRemoteValues(forceAdReload: true);
-        await _checkForForceUpdate();
-      } catch (e) {
-        debugPrint('Remote‑config activate failed: $e');
-      }
+    _rcSub = _rc.onConfigUpdated.listen((_) async {
+      await _rc.activate();
+      _applyRemoteValues(forceAdReload: true);
+      await _checkForForceUpdate();
     });
-
     if (mounted) setState(() {});
   }
 
-  // INITIAL FETCH & DEFAULTS
   Future<void> _setupRemoteConfig() async {
-    await _remoteConfig.setDefaults({
+    await _rc.setDefaults({
       'android_home_banner_ad_unit_id': _defAndroidBanner,
       'ios_home_banner_ad_unit_id': _defIosBanner,
       'android_rewarded_ad_unit_id': _defAndroidReward,
@@ -128,57 +114,56 @@ class _HomeScreenState extends State<HomeScreen> {
       'chip_labels': _defChips,
       'initial_credits': _defInitialCredits,
       'background_colors': _defColorJson,
+      'show_buy_button': _defShowBuy,
+      'android_buy_url': _defAndroidBuyUrl,
+      'ios_buy_url': _defIosBuyUrl,
       'min_android_build': _defMinAndroidBuild,
       'min_ios_build': _defMinIosBuild,
-      'android_store_url': _defAndroidUrl,
-      'ios_store_url': _defIosUrl,
+      'android_store_url': _defAndroidStoreUrl,
+      'ios_store_url': _defIosStoreUrl,
     });
-
     try {
-      await _remoteConfig.setConfigSettings(
+      await _rc.setConfigSettings(
         RemoteConfigSettings(
           minimumFetchInterval: const Duration(minutes: 10),
           fetchTimeout: const Duration(seconds: 10),
         ),
       );
-      await _remoteConfig.fetchAndActivate();
-    } catch (_) {
-      /* defaults already applied */
-    }
+      await _rc.fetchAndActivate();
+    } catch (_) {}
     _applyRemoteValues();
     await _checkForForceUpdate();
   }
 
-  // Pull values from Remote Config into local vars and optionally reload ads
   void _applyRemoteValues({bool forceAdReload = false}) {
-    final oldBanner = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+    final oldBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
     final oldReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
-    final oldColorsJson = _backgroundColorJson;
+    final oldColors = _backgroundColorJson;
 
-    _androidBannerId = _remoteConfig.getString(
-      'android_home_banner_ad_unit_id',
-    );
-    _iosBannerId = _remoteConfig.getString('ios_home_banner_ad_unit_id');
-    _androidRewardId = _remoteConfig.getString('android_rewarded_ad_unit_id');
-    _iosRewardId = _remoteConfig.getString('ios_rewarded_ad_unit_id');
+    _androidBannerId = _rc.getString('android_home_banner_ad_unit_id');
+    _iosBannerId = _rc.getString('ios_home_banner_ad_unit_id');
+    _androidRewardId = _rc.getString('android_rewarded_ad_unit_id');
+    _iosRewardId = _rc.getString('ios_rewarded_ad_unit_id');
     _chipLabels =
-        _remoteConfig
-            .getString('chip_labels')
-            .split(',')
-            .map((e) => e.trim())
-            .toList();
-    _remoteInitialCredits = _remoteConfig.getInt('initial_credits');
-    _backgroundColorJson = _remoteConfig.getString('background_colors');
+        _rc.getString('chip_labels').split(',').map((e) => e.trim()).toList();
+    _remoteInitialCredits = _rc.getInt('initial_credits');
 
-    if (oldColorsJson != _backgroundColorJson) {
+    _backgroundColorJson = _rc.getString('background_colors');
+    _showBuyButton = _rc.getBool('show_buy_button');
+    _buyUrl =
+        Platform.isAndroid
+            ? _rc.getString('android_buy_url')
+            : _rc.getString('ios_buy_url');
+
+    if (oldColors != _backgroundColorJson) {
       _colors = ColorPalette.fromRemote(_backgroundColorJson);
       _selectedColorIndex = 0;
     }
 
     if (forceAdReload) {
-      final newBanner = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+      final newBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
       final newReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
-      if (newBanner != oldBanner) {
+      if (newBan != oldBan) {
         _bannerAd?.dispose();
         _isBannerAdReady = false;
         _createBannerAd();
@@ -188,60 +173,44 @@ class _HomeScreenState extends State<HomeScreen> {
         _loadRewardedAd();
       }
     }
-
     if (mounted) setState(() {});
   }
 
-  // ───────────────────────── Shared‑prefs for credits ─────────────────────────
+  // ───────────────────────── credits prefs ─────────────────────────
   Future<void> _loadCredits() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getInt('credit_count');
-    setState(() => _credits = stored ?? _remoteInitialCredits);
+    final p = await SharedPreferences.getInstance();
+    _credits = p.getInt('credit_count') ?? _remoteInitialCredits;
+    if (mounted) setState(() {});
   }
 
   Future<void> _saveCredits() async =>
       (await SharedPreferences.getInstance()).setInt('credit_count', _credits);
 
-  // ───────────────────────── Banner Ad ─────────────────────────
+  // ───────────────────────── ads ─────────────────────────
   void _createBannerAd() {
-    final id = Platform.isAndroid ? _androidBannerId : _iosBannerId;
     _bannerAd = BannerAd(
-      adUnitId: id,
+      adUnitId: Platform.isAndroid ? _androidBannerId : _iosBannerId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) => setState(() => _isBannerAdReady = true),
         onAdFailedToLoad: (ad, err) {
-          debugPrint('Banner failed: $err');
-          _isBannerAdReady = false;
           ad.dispose();
+          _isBannerAdReady = false;
         },
       ),
     )..load();
   }
 
-  // ───────────────────────── Rewarded Ad ─────────────────────────
   void _loadRewardedAd() {
-    final id = Platform.isAndroid ? _androidRewardId : _iosRewardId;
     RewardedAd.load(
-      adUnitId: id,
+      adUnitId: Platform.isAndroid ? _androidRewardId : _iosRewardId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewardedAd = ad;
-          _rewardedAd?.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              ad.dispose();
-              _loadRewardedAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, err) {
-              ad.dispose();
-              _loadRewardedAd();
-            },
-          );
         },
-        onAdFailedToLoad: (err) {
-          debugPrint('Rewarded failed: $err');
+        onAdFailedToLoad: (_) {
           _rewardedAd = null;
         },
       ),
@@ -250,11 +219,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showRewardedAd() {
     if (_rewardedAd == null) {
-      debugPrint('Rewarded not ready');
       Navigator.of(context).pop();
       return;
     }
-    _rewardedAd?.show(
+    _rewardedAd!.show(
       onUserEarnedReward: (_, __) async {
         setState(() => _credits += 5);
         await _saveCredits();
@@ -264,36 +232,28 @@ class _HomeScreenState extends State<HomeScreen> {
     _rewardedAd = null;
   }
 
-  // ───────────────────────── Generation callbacks ─────────────────────────
-  void _handleGenerate(String first, String second) async {
+  // ───────────────────────── generators ─────────────────────────
+  void _handleGenerate(String f, String s) async {
     if (_credits > 0) {
-      setState(() {
-        _generatedFirstWord = first;
-        _generatedSecondWord = second;
-        _imageCount = first.length;
-        _hasGenerated = true;
-        _credits--;
-      });
+      setState(() => _credits--);
+      _firstWord = f;
+      _secondWord = s;
+      _imageCount = f.length;
+      _hasGenerated = true;
       await _saveCredits();
     } else {
       _showCreditLimitModal();
     }
   }
 
-  // FIX: no credit deduction if same chip, and block change when credits are 0
   void _onChipSelected(int i) async {
-    // ‑‑ Return early if user tapped the already‑selected chip
     if (i == _selectedChipIndex) return;
-
     if (_credits > 0) {
-      setState(() {
-        _credits--;
-        _selectedChipIndex = i;
-      });
+      setState(() => _credits--);
+      _selectedChipIndex = i;
       await _saveCredits();
     } else {
       _showCreditLimitModal();
-      // Do NOT change selectedChipIndex when credits are exhausted
     }
   }
 
@@ -304,8 +264,8 @@ class _HomeScreenState extends State<HomeScreen> {
     MaterialPageRoute(
       builder:
           (_) => PreviewScreen(
-            firstWord: _generatedFirstWord,
-            secondWord: _generatedSecondWord,
+            firstWord: _firstWord,
+            secondWord: _secondWord,
             selectedChipIndex: _selectedChipIndex,
             selectedColorIndex: _selectedColorIndex,
             colors: _colors,
@@ -317,53 +277,49 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_hasGenerated) setState(() => _hasGenerated = false);
   }
 
-  // ───────────────────────── Credit‑limit modal ─────────────────────────
+  // ───────────────────────── modals ─────────────────────────
   void _showCreditLimitModal() => showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _CreditModal(onWatchAd: _showRewardedAd),
+    builder:
+        (_) => _CreditModal(
+          onWatchAd: _showRewardedAd,
+          showBuy: _showBuyButton,
+          buyUrl: _buyUrl,
+        ),
   );
 
-  // ───────────────────────── Force‑update checker & modal ─────────────────────────
   Future<void> _checkForForceUpdate() async {
     final info = await PackageInfo.fromPlatform();
-    final localBuild = int.tryParse(info.buildNumber) ?? 1;
-
-    final minBuild =
+    final local = int.tryParse(info.buildNumber) ?? 1;
+    final min =
         Platform.isAndroid
-            ? _remoteConfig.getInt('min_android_build')
-            : _remoteConfig.getInt('min_ios_build');
-
+            ? _rc.getInt('min_android_build')
+            : _rc.getInt('min_ios_build');
     _storeUrl =
         Platform.isAndroid
-            ? _remoteConfig.getString('android_store_url')
-            : _remoteConfig.getString('ios_store_url');
-
-    final shouldUpdate = localBuild < minBuild;
-
-    if (mounted && shouldUpdate && !_mustUpdate) {
-      setState(() => _mustUpdate = true);
-
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showForceUpdateModal(),
-      );
+            ? _rc.getString('android_store_url')
+            : _rc.getString('ios_store_url');
+    if (local < min && !_mustUpdate && mounted) {
+      _mustUpdate = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showForceUpdateModal();
+      });
     }
   }
 
-  void _showForceUpdateModal() {
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _ForceUpdateModal(storeUrl: _storeUrl),
-    );
-  }
+  void _showForceUpdateModal() => showModalBottomSheet(
+    context: context,
+    isDismissible: false,
+    enableDrag: false,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _ForceUpdateModal(storeUrl: _storeUrl),
+  );
 
   @override
   void dispose() {
@@ -377,10 +333,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final bg =
-        (_selectedColorIndex >= 0 && _selectedColorIndex < _colors.length)
+        (_selectedColorIndex < _colors.length)
             ? _colors[_selectedColorIndex].color
             : AppColors.previewBackground(context);
-
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -405,8 +360,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       PreviewSection(
                         imageCount: _imageCount,
                         backgroundColor: bg,
-                        firstWord: _generatedFirstWord,
-                        secondWord: _generatedSecondWord,
+                        firstWord: _firstWord,
+                        secondWord: _secondWord,
                         selectedChipIndex: _selectedChipIndex,
                         showImageBackground: false,
                       ),
@@ -448,7 +403,13 @@ class _HomeScreenState extends State<HomeScreen> {
 // ───────────────────────── Modal widgets ─────────────────────────
 class _CreditModal extends StatelessWidget {
   final VoidCallback onWatchAd;
-  const _CreditModal({required this.onWatchAd});
+  final bool showBuy;
+  final String buyUrl;
+  const _CreditModal({
+    required this.onWatchAd,
+    required this.showBuy,
+    required this.buyUrl,
+  });
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
@@ -469,59 +430,29 @@ class _CreditModal extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
               'CREDIT LIMIT REACHED',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                letterSpacing: 1,
-              ),
+              style: TextStyle(fontSize: 12, letterSpacing: 1),
             ),
             const SizedBox(height: 8),
-            Text.rich(
-              TextSpan(
-                children: [
-                  const TextSpan(
-                    text: 'WATCH A SHORT AD TO GET ',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 1,
-                      color: Color(0xFF959399),
-                    ),
-                  ),
-                  const TextSpan(
-                    text: '5',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 1,
-                      color: Color(0xFFBF9B47),
-                    ),
-                  ),
-                  const TextSpan(
-                    text: ' MORE CREDITS INSTANTLY',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 1,
-                      color: Color(0xFF959399),
-                    ),
-                  ),
-                ],
-              ),
+            const Text(
+              'WATCH AN AD TO GET 5 MORE CREDITS OR PURCHASE UNLIMITED CREDITS.',
               textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Color(0xFF959399)),
             ),
             const SizedBox(height: 24),
             AmbigramButton(text: 'WATCH AD (+5)', onPressed: onWatchAd),
-            const SizedBox(height: 12),
-            AmbigramButton(
-              text: 'BUY UNLIMITED CREDITS',
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                // In‑app purchase flow here
-                Navigator.of(context).pop();
-              },
-            ),
+            if (showBuy) ...[
+              const SizedBox(height: 12),
+              AmbigramButton(
+                text: 'BUY UNLIMITED CREDITS',
+                onPressed: () async {
+                  HapticFeedback.mediumImpact();
+                  final uri = Uri.parse(buyUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ],
             const SizedBox(height: 16),
           ],
         ),
@@ -535,41 +466,38 @@ class _ForceUpdateModal extends StatelessWidget {
   const _ForceUpdateModal({required this.storeUrl});
 
   @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            const Text(
-              'UPDATE REQUIRED',
-              style: TextStyle(
-                fontSize: 14,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w600,
-              ),
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'UPDATE REQUIRED',
+            style: TextStyle(
+              fontSize: 14,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'A NEWER, MORE STABLE VERSION IS AVAILABLE.\nPLEASE UPDATE TO CONTINUE.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Color(0xFF7D7A82)),
-            ),
-            const SizedBox(height: 24),
-            AmbigramButton(
-              text: 'UPDATE NOW',
-              onPressed: () async {
-                final uri = Uri.parse(storeUrl);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'A newer version is available. Please update to continue.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Color(0xFF7D7A82)),
+          ),
+          const SizedBox(height: 24),
+          AmbigramButton(
+            text: 'UPDATE NOW',
+            onPressed: () async {
+              final uri = Uri.parse(storeUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
