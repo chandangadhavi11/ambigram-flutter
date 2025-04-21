@@ -1,11 +1,14 @@
+// lib/screens/home_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:flutter_application_1/core/constants/app_colors.dart';
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
@@ -25,7 +28,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // ───────────────────────── Remote‑Config defaults ─────────────────────────
+  // ───────────────────────── Remote‑Config defaults (ads/credits) ─────────────────────────
   static const _defAndroidBanner = 'ca-app-pub-3940256099942544/6300978111';
   static const _defIosBanner = 'ca-app-pub-3940256099942544/2934735716';
   static const _defAndroidReward = 'ca-app-pub-3940256099942544/5224354917';
@@ -34,8 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
       'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
   static const _defInitialCredits = 25;
 
-  /// NEW: default colours JSON (the same list from `_fallback` above).
-  /// Keep it small so it fits within Remote‑Config’s 64 KiB value limit.
+  /// Default colour set (keep tiny – Remote‑Config string limit is 64 KiB).
   static const _defColorJson = '''
   [
     {"name":"Off White","color":"#FAFAFA"},
@@ -48,6 +50,13 @@ class _HomeScreenState extends State<HomeScreen> {
     {"name":"Turquoise","color":"#AFEEEE"}
   ]''';
 
+  // ───────────────────────── Force‑update defaults ─────────────────────────
+  static const _defMinAndroidBuild = 1;
+  static const _defMinIosBuild = 1;
+  static const _defAndroidUrl =
+      'https://play.google.com/store/apps/details?id=com.ambigram.app';
+  static const _defIosUrl = 'https://apps.apple.com/app/id123456789';
+
   // ───────────────────────── Remote‑controlled values ─────────────────────────
   late String _androidBannerId = _defAndroidBanner;
   late String _iosBannerId = _defIosBanner;
@@ -57,7 +66,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _defChips.split(',').map((e) => e.trim()).toList();
   int _remoteInitialCredits = _defInitialCredits;
 
-  /// NEW: holds the JSON string from Remote Config
   String _backgroundColorJson = _defColorJson;
 
   // ───────────────────────── UI / runtime state ─────────────────────────
@@ -67,7 +75,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _credits = _defInitialCredits;
   int _selectedColorIndex = 0;
-  late List<NamedColor> _colors;
+
+  /// 👈  INITIALISE IMMEDIATELY to avoid LateInitializationError
+  List<NamedColor> _colors = ColorPalette.fromRemote(_defColorJson);
 
   String _generatedFirstWord = '';
   String _generatedSecondWord = '';
@@ -79,6 +89,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // Remote‑Config & listener
   final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
   StreamSubscription<RemoteConfigUpdate>? _rcSub;
+
+  // ───────────────────────── Force‑update state ─────────────────────────
+  bool _mustUpdate = false;
+  String _storeUrl = _defAndroidUrl; // overwritten per‑platform
 
   // ───────────────────────── lifecycle ─────────────────────────
   @override
@@ -99,41 +113,47 @@ class _HomeScreenState extends State<HomeScreen> {
       try {
         await _remoteConfig.activate();
         _applyRemoteValues(forceAdReload: true);
+        await _checkForForceUpdate();
       } catch (e) {
         debugPrint('Remote‑config activate failed: $e');
       }
     });
 
-    _colors = ColorPalette.fromRemote(_backgroundColorJson);
-
-    if (mounted) setState(() {});
+    if (mounted) setState(() {}); // first rebuild
   }
 
   // INITIAL FETCH & DEFAULTS
   Future<void> _setupRemoteConfig() async {
     await _remoteConfig.setDefaults({
+      // existing defaults …
       'android_home_banner_ad_unit_id': _defAndroidBanner,
       'ios_home_banner_ad_unit_id': _defIosBanner,
       'android_rewarded_ad_unit_id': _defAndroidReward,
       'ios_rewarded_ad_unit_id': _defIosReward,
       'chip_labels': _defChips,
       'initial_credits': _defInitialCredits,
-      'background_colors': _defColorJson, //  ← NEW
+      'background_colors': _defColorJson,
+
+      // force‑update defaults
+      'min_android_build': _defMinAndroidBuild,
+      'min_ios_build': _defMinIosBuild,
+      'android_store_url': _defAndroidUrl,
+      'ios_store_url': _defIosUrl,
     });
 
     try {
       await _remoteConfig.setConfigSettings(
         RemoteConfigSettings(
-          minimumFetchInterval: const Duration(hours: 1),
+          minimumFetchInterval: const Duration(minutes: 10),
           fetchTimeout: const Duration(seconds: 10),
         ),
       );
       await _remoteConfig.fetchAndActivate();
     } catch (_) {
-      // swallow – defaults already set
+      /* defaults already applied */
     }
-
     _applyRemoteValues();
+    await _checkForForceUpdate();
   }
 
   // Pull values from Remote Config into local vars and optionally reload ads
@@ -158,16 +178,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _backgroundColorJson = _remoteConfig.getString('background_colors');
 
-    // Re‑parse colours if the JSON changed
+    // Re‑parse colours if JSON changed
     if (oldColorsJson != _backgroundColorJson) {
       _colors = ColorPalette.fromRemote(_backgroundColorJson);
-      _selectedColorIndex = 0; // reset to first colour for safety
+      _selectedColorIndex = 0;
     }
 
     if (forceAdReload) {
       final newBanner = Platform.isAndroid ? _androidBannerId : _iosBannerId;
       final newReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
-
       if (newBanner != oldBanner) {
         _bannerAd?.dispose();
         _isBannerAdReady = false;
@@ -179,15 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    setState(() {}); // rebuild UI
-  }
-
-  @override
-  void dispose() {
-    _bannerAd?.dispose();
-    _rewardedAd?.dispose();
-    _rcSub?.cancel();
-    super.dispose();
+    if (mounted) setState(() {}); // rebuild UI
   }
 
   // ───────────────────────── Shared‑prefs for credits ─────────────────────────
@@ -302,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
             secondWord: _generatedSecondWord,
             selectedChipIndex: _selectedChipIndex,
             selectedColorIndex: _selectedColorIndex,
-            colors: _colors, // ← add this
+            colors: _colors,
           ),
     ),
   );
@@ -320,6 +331,55 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
     builder: (_) => _CreditModal(onWatchAd: _showRewardedAd),
   );
+
+  // ───────────────────────── Force‑update checker & modal ─────────────────────────
+  Future<void> _checkForForceUpdate() async {
+    final info = await PackageInfo.fromPlatform();
+    final localBuild = int.tryParse(info.buildNumber) ?? 1;
+
+    print('Local build: $localBuild');
+
+    final minBuild =
+        Platform.isAndroid
+            ? _remoteConfig.getInt('min_android_build')
+            : _remoteConfig.getInt('min_ios_build');
+
+    _storeUrl =
+        Platform.isAndroid
+            ? _remoteConfig.getString('android_store_url')
+            : _remoteConfig.getString('ios_store_url');
+
+    final shouldUpdate = localBuild < minBuild;
+
+    if (mounted && shouldUpdate && !_mustUpdate) {
+      setState(() => _mustUpdate = true);
+
+      // open modal after current frame
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showForceUpdateModal(),
+      );
+    }
+  }
+
+  void _showForceUpdateModal() {
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ForceUpdateModal(storeUrl: _storeUrl),
+    );
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _rewardedAd?.dispose();
+    _rcSub?.cancel();
+    super.dispose();
+  }
 
   // ───────────────────────── build ─────────────────────────
   @override
@@ -360,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 16),
                       ColorSelectionSection(
-                        colors: _colors, // ← NEW
+                        colors: _colors,
                         selectedColorIndex: _selectedColorIndex,
                         onColorSelected: _onColorSelected,
                       ),
@@ -393,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ───────────────────────── Modal widget ─────────────────────────
+// ───────────────────────── Modal widgets ─────────────────────────
 class _CreditModal extends StatelessWidget {
   final VoidCallback onWatchAd;
   const _CreditModal({required this.onWatchAd});
@@ -476,4 +536,54 @@ class _CreditModal extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _ForceUpdateModal extends StatelessWidget {
+  final String storeUrl;
+  const _ForceUpdateModal({required this.storeUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // SvgPicture.asset(
+            //   'assets/images/update_icon.svg',
+            //   width: 56,
+            //   height: 56,
+            // ),
+            const SizedBox(height: 12),
+            const Text(
+              'UPDATE REQUIRED',
+              style: TextStyle(
+                fontSize: 14,
+                letterSpacing: 1,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'A NEWER, MORE STABLE VERSION IS AVAILABLE.\n'
+              'PLEASE UPDATE TO CONTINUE.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Color(0xFF7D7A82)),
+            ),
+            const SizedBox(height: 24),
+            AmbigramButton(
+              text: 'UPDATE NOW',
+              onPressed: () async {
+                final uri = Uri.parse(storeUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
