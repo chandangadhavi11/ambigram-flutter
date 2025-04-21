@@ -1,11 +1,15 @@
+// home_screen.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-// Replace with your actual paths:
 import 'package:flutter_application_1/core/constants/app_colors.dart';
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
 import 'package:flutter_application_1/features/preview/presentation/screens/preview_screen.dart';
@@ -16,364 +20,328 @@ import 'components/preview_section.dart';
 import 'components/color_selection_section.dart';
 import 'components/input_section.dart';
 
-/// The main screen that hosts all the sections and orchestrates the logic.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final List<String> _chipLabels = [
-    'ANTIOGLYPH',
-    'ESCHERESQUE',
-    'AMBORATTIC',
-    'SPECULON',
-    'AETHERGLYPH',
-    'GYROGLYPH',
-    'ENANTIGRAM',
-  ];
-  int _selectedChipIndex = 0;
+  // ───────────────────────── Remote‑Config defaults ─────────────────────────
+  static const _defAndroidBanner = 'ca-app-pub-3940256099942544/6300978111';
+  static const _defIosBanner = 'ca-app-pub-3940256099942544/2934735716';
+  static const _defAndroidReward = 'ca-app-pub-3940256099942544/5224354917';
+  static const _defIosReward = 'ca-app-pub-3940256099942544/1712485313';
+  static const _defChips =
+      'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
+  static const _defInitialCredits = 25;
+  static const _defColorJson = '''
+  [{"name":"Off White","color":"#FAFAFA"},{"name":"Pink","color":"#FFC0CB"}]''';
 
+  static const _defMinAndroidBuild = 1;
+  static const _defMinIosBuild = 1;
+
+  static const _defAndroidStoreUrl =
+      'https://play.google.com/store/apps/details?id=com.ambigram.app';
+  static const _defIosStoreUrl = 'https://apps.apple.com/app/id123456789';
+
+  static const _defShowBuy = true;
+  static const _defAndroidBuyUrl = _defAndroidStoreUrl;
+  static const _defIosBuyUrl = _defIosStoreUrl;
+
+  // ───────────────────────── Remote‑controlled values ─────────────────────────
+  late String _androidBannerId = _defAndroidBanner;
+  late String _iosBannerId = _defIosBanner;
+  late String _androidRewardId = _defAndroidReward;
+  late String _iosRewardId = _defIosReward;
+  late List<String> _chipLabels =
+      _defChips.split(',').map((e) => e.trim()).toList();
+  int _remoteInitialCredits = _defInitialCredits;
+  String _backgroundColorJson = _defColorJson;
+
+  // buy button
+  bool _showBuyButton = _defShowBuy;
+  String _buyUrl = Platform.isAndroid ? _defAndroidBuyUrl : _defIosBuyUrl;
+
+  // ───────────────────────── UI / runtime state ─────────────────────────
+  int _selectedChipIndex = 0;
   int _imageCount = 0;
   bool _hasGenerated = false;
-  int _credits = 25;
-
+  int _credits = _defInitialCredits;
   int _selectedColorIndex = 0;
-  late List<NamedColor> _colors;
+  List<NamedColor> _colors = ColorPalette.fromRemote(_defColorJson);
 
-  String _generatedFirstWord = '';
-  String _generatedSecondWord = '';
+  String _firstWord = '', _secondWord = '';
 
-  /// AdMob Banner
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
+  RewardedAd? _rewardedAd;
 
-  /// Rewarded Ad
-  RewardedAd? _rewardedAd; // <--- ADD THIS
+  final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
+  StreamSubscription<RemoteConfigUpdate>? _rcSub;
 
+  // force‑update
+  bool _mustUpdate = false;
+  String _storeUrl = _defAndroidStoreUrl;
+
+  // ───────────────────────── lifecycle ─────────────────────────
   @override
   void initState() {
     super.initState();
-    _loadCredits();
-    _initGoogleMobileAds();
-    _createBannerAd();
-
-    /// Load the Rewarded Ad as soon as the app initializes
-    _loadRewardedAd(); // <--- ADD THIS
+    _bootstrap();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!mounted) return;
-    _colors = ColorPalette.backgroundChoices(context);
-  }
-
-  @override
-  void dispose() {
-    _bannerAd?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _initGoogleMobileAds() async {
-    // Initialize the Mobile Ads SDK
+  Future<void> _bootstrap() async {
+    await _setupRemoteConfig();
     await MobileAds.instance.initialize();
+    await _loadCredits();
+    _createBannerAd();
+    _loadRewardedAd();
+    _rcSub = _rc.onConfigUpdated.listen((_) async {
+      await _rc.activate();
+      _applyRemoteValues(forceAdReload: true);
+      await _checkForForceUpdate();
+    });
+    if (mounted) setState(() {});
   }
 
+  Future<void> _setupRemoteConfig() async {
+    await _rc.setDefaults({
+      'android_home_banner_ad_unit_id': _defAndroidBanner,
+      'ios_home_banner_ad_unit_id': _defIosBanner,
+      'android_rewarded_ad_unit_id': _defAndroidReward,
+      'ios_rewarded_ad_unit_id': _defIosReward,
+      'chip_labels': _defChips,
+      'initial_credits': _defInitialCredits,
+      'background_colors': _defColorJson,
+      'show_buy_button': _defShowBuy,
+      'android_buy_url': _defAndroidBuyUrl,
+      'ios_buy_url': _defIosBuyUrl,
+      'min_android_build': _defMinAndroidBuild,
+      'min_ios_build': _defMinIosBuild,
+      'android_store_url': _defAndroidStoreUrl,
+      'ios_store_url': _defIosStoreUrl,
+    });
+    try {
+      await _rc.setConfigSettings(
+        RemoteConfigSettings(
+          minimumFetchInterval: const Duration(minutes: 10),
+          fetchTimeout: const Duration(seconds: 10),
+        ),
+      );
+      await _rc.fetchAndActivate();
+    } catch (_) {}
+    _applyRemoteValues();
+    await _checkForForceUpdate();
+  }
+
+  void _applyRemoteValues({bool forceAdReload = false}) {
+    final oldBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+    final oldReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
+    final oldColors = _backgroundColorJson;
+
+    _androidBannerId = _rc.getString('android_home_banner_ad_unit_id');
+    _iosBannerId = _rc.getString('ios_home_banner_ad_unit_id');
+    _androidRewardId = _rc.getString('android_rewarded_ad_unit_id');
+    _iosRewardId = _rc.getString('ios_rewarded_ad_unit_id');
+    _chipLabels =
+        _rc.getString('chip_labels').split(',').map((e) => e.trim()).toList();
+    _remoteInitialCredits = _rc.getInt('initial_credits');
+
+    _backgroundColorJson = _rc.getString('background_colors');
+    _showBuyButton = _rc.getBool('show_buy_button');
+    _buyUrl =
+        Platform.isAndroid
+            ? _rc.getString('android_buy_url')
+            : _rc.getString('ios_buy_url');
+
+    if (oldColors != _backgroundColorJson) {
+      _colors = ColorPalette.fromRemote(_backgroundColorJson);
+      _selectedColorIndex = 0;
+    }
+
+    if (forceAdReload) {
+      final newBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+      final newReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
+      if (newBan != oldBan) {
+        _bannerAd?.dispose();
+        _isBannerAdReady = false;
+        _createBannerAd();
+      }
+      if (newReward != oldReward) {
+        _rewardedAd?.dispose();
+        _loadRewardedAd();
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  // ───────────────────────── credits prefs ─────────────────────────
+  Future<void> _loadCredits() async {
+    final p = await SharedPreferences.getInstance();
+    _credits = p.getInt('credit_count') ?? _remoteInitialCredits;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveCredits() async =>
+      (await SharedPreferences.getInstance()).setInt('credit_count', _credits);
+
+  // ───────────────────────── ads ─────────────────────────
   void _createBannerAd() {
     _bannerAd = BannerAd(
-      // Use your real Ad Unit IDs in production.
-      // The below are test Ad Unit IDs.
-      adUnitId:
-          Platform.isAndroid
-              ? 'ca-app-pub-3940256099942544/6300978111'
-              : 'ca-app-pub-3940256099942544/2934735716',
+      adUnitId: Platform.isAndroid ? _androidBannerId : _iosBannerId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
-        onAdLoaded: (Ad ad) {
-          setState(() {
-            _isBannerAdReady = true;
-          });
-        },
-        onAdFailedToLoad: (Ad ad, LoadAdError error) {
-          debugPrint('BannerAd failed to load: $error');
-          _isBannerAdReady = false;
+        onAdLoaded: (_) => setState(() => _isBannerAdReady = true),
+        onAdFailedToLoad: (ad, err) {
           ad.dispose();
+          _isBannerAdReady = false;
         },
       ),
-    );
-    _bannerAd?.load();
+    )..load();
   }
 
-  /// Load Rewarded Ad method
   void _loadRewardedAd() {
     RewardedAd.load(
-      // Use test IDs for testing. Replace with your real IDs when ready.
-      adUnitId:
-          Platform.isAndroid
-              ? 'ca-app-pub-3940256099942544/5224354917' // Test ID for Android
-              : 'ca-app-pub-3940256099942544/1712485313', // Test ID for iOS
+      adUnitId: Platform.isAndroid ? _androidRewardId : _iosRewardId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (RewardedAd ad) {
-          debugPrint('Rewarded Ad loaded.');
+        onAdLoaded: (ad) {
           _rewardedAd = ad;
-
-          // Set up callbacks for full-screen events
-          _rewardedAd?.fullScreenContentCallback = FullScreenContentCallback(
-            onAdDismissedFullScreenContent: (ad) {
-              debugPrint('Rewarded Ad dismissed.');
-              ad.dispose();
-              // Load a new ad for next time.
-              _loadRewardedAd();
-            },
-            onAdFailedToShowFullScreenContent: (ad, err) {
-              debugPrint('Failed to show Rewarded Ad: $err');
-              ad.dispose();
-              // Load a new ad for next time.
-              _loadRewardedAd();
-            },
-          );
         },
-        onAdFailedToLoad: (LoadAdError error) {
-          debugPrint('Failed to load Rewarded Ad: $error');
+        onAdFailedToLoad: (_) {
           _rewardedAd = null;
         },
       ),
     );
   }
 
-  Future<void> _loadCredits() async {
-    final prefs = await SharedPreferences.getInstance();
-    final storedCredits = prefs.getInt('credit_count') ?? 25;
-    setState(() {
-      _credits = storedCredits;
-    });
-  }
-
-  Future<void> _saveCredits() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('credit_count', _credits);
-  }
-
-  void _handleGenerate(String firstWord, String secondWord) async {
-    if (_credits > 0) {
-      setState(() {
-        _generatedFirstWord = firstWord;
-        _generatedSecondWord = secondWord;
-        _imageCount = firstWord.length;
-        _hasGenerated = true;
-        _credits--;
-      });
-      await _saveCredits();
-    } else {
-      _showCreditLimitModal();
-    }
-  }
-
-  void _showCreditLimitModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20.0)),
-      ),
-      builder: (BuildContext context) {
-        final deviceWidth = MediaQuery.of(context).size.width;
-        return SingleChildScrollView(
-          child: Container(
-            width: deviceWidth,
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header Section
-                SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    children: [
-                      SvgPicture.asset(
-                        'assets/images/flash_icon.svg',
-                        width: 40,
-                        height: 40,
-                        semanticsLabel: 'Icon',
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'CREDIT LIMIT REACHED',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'Averta Demo PE Cutted Demo',
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            const TextSpan(
-                              text: 'WATCH A SHORT AD TO GET ',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'Averta Demo PE Cutted Demo',
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 1,
-                                color: Color(0xFF959399),
-                              ),
-                            ),
-                            const TextSpan(
-                              text: '5',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'Averta Demo PE Cutted Demo',
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 1,
-                                color: Color(0xFFBF9B47),
-                              ),
-                            ),
-                            const TextSpan(
-                              text: ' MORE CREDITS INSTANTLY',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'Averta Demo PE Cutted Demo',
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 1,
-                                color: Color(0xFF959399),
-                              ),
-                            ),
-                          ],
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Buttons Section
-                SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    children: [
-                      AmbigramButton(
-                        text: "WATCH AD (+5)",
-                        onPressed: () {
-                          HapticFeedback.mediumImpact();
-                          _showRewardedAd(); // <--- USE METHOD TO SHOW THE AD
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      AmbigramButton(
-                        text: "BUY UNLIMITED CREDITS",
-                        onPressed: () {
-                          HapticFeedback.mediumImpact();
-                          // Implement your in-app purchase flow here
-                          setState(() {
-                            _credits = 999;
-                          });
-                          _saveCredits();
-                          Navigator.of(context).pop();
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// Show the Rewarded Ad
-  void _showRewardedAd() async {
+  void _showRewardedAd() {
     if (_rewardedAd == null) {
-      debugPrint('Rewarded Ad not ready.');
       Navigator.of(context).pop();
       return;
     }
-
-    // Show the ad
-    _rewardedAd?.show(
-      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) async {
-        // The user watched the video; reward them.
-        setState(() {
-          _credits += 5;
-        });
+    _rewardedAd!.show(
+      onUserEarnedReward: (_, __) async {
+        setState(() => _credits += 5);
         await _saveCredits();
-        debugPrint('User rewarded with ${reward.amount} ${reward.type}');
       },
     );
-    // Once the ad is shown, close the bottom sheet.
     Navigator.of(context).pop();
     _rewardedAd = null;
   }
 
-  void _onColorSelected(int index) {
-    setState(() {
-      _selectedColorIndex = index;
-    });
-  }
-
-  void _onChipSelected(int index) async {
+  // ───────────────────────── generators ─────────────────────────
+  void _handleGenerate(String f, String s) async {
     if (_credits > 0) {
-      setState(() {
-        _credits--;
-        _selectedChipIndex = index;
-      });
+      setState(() => _credits--);
+      _firstWord = f;
+      _secondWord = s;
+      _imageCount = f.length;
+      _hasGenerated = true;
       await _saveCredits();
     } else {
       _showCreditLimitModal();
-      setState(() {
-        _selectedChipIndex = index;
-      });
     }
   }
 
-  void _handleDownloadTap() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => PreviewScreen(
-              firstWord: _generatedFirstWord,
-              secondWord: _generatedSecondWord,
-              selectedChipIndex: _selectedChipIndex,
-              selectedColorIndex: _selectedColorIndex,
-            ),
-      ),
-    );
+  void _onChipSelected(int i) async {
+    if (i == _selectedChipIndex) return;
+    if (_credits > 0) {
+      setState(() => _credits--);
+      _selectedChipIndex = i;
+      await _saveCredits();
+    } else {
+      _showCreditLimitModal();
+    }
   }
+
+  void _onColorSelected(int i) => setState(() => _selectedColorIndex = i);
+
+  void _handleDownloadTap() => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder:
+          (_) => PreviewScreen(
+            firstWord: _firstWord,
+            secondWord: _secondWord,
+            selectedChipIndex: _selectedChipIndex,
+            selectedColorIndex: _selectedColorIndex,
+            colors: _colors,
+          ),
+    ),
+  );
 
   void _handleInputChanged() {
-    if (_hasGenerated) {
-      setState(() {
-        _hasGenerated = false;
+    if (_hasGenerated) setState(() => _hasGenerated = false);
+  }
+
+  // ───────────────────────── modals ─────────────────────────
+  void _showCreditLimitModal() => showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder:
+        (_) => _CreditModal(
+          onWatchAd: _showRewardedAd,
+          showBuy: _showBuyButton,
+          buyUrl: _buyUrl,
+        ),
+  );
+
+  Future<void> _checkForForceUpdate() async {
+    final info = await PackageInfo.fromPlatform();
+    final local = int.tryParse(info.buildNumber) ?? 1;
+    final min =
+        Platform.isAndroid
+            ? _rc.getInt('min_android_build')
+            : _rc.getInt('min_ios_build');
+    _storeUrl =
+        Platform.isAndroid
+            ? _rc.getString('android_store_url')
+            : _rc.getString('ios_store_url');
+    if (local < min && !_mustUpdate && mounted) {
+      _mustUpdate = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showForceUpdateModal();
       });
     }
   }
 
+  void _showForceUpdateModal() => showModalBottomSheet(
+    context: context,
+    isDismissible: false,
+    enableDrag: false,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _ForceUpdateModal(storeUrl: _storeUrl),
+  );
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    _rewardedAd?.dispose();
+    _rcSub?.cancel();
+    super.dispose();
+  }
+
+  // ───────────────────────── build ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    final backgroundColor =
-        (_selectedColorIndex >= 0 && _selectedColorIndex < _colors.length)
+    final bg =
+        (_selectedColorIndex < _colors.length)
             ? _colors[_selectedColorIndex].color
             : AppColors.previewBackground(context);
-
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
-            // Wrap main content in Expanded + SingleChildScrollView
             Expanded(
               child: SingleChildScrollView(
-                // Add extra bottom padding to create space above the ad
                 padding: const EdgeInsets.only(bottom: 72),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -391,14 +359,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 24),
                       PreviewSection(
                         imageCount: _imageCount,
-                        backgroundColor: backgroundColor,
-                        firstWord: _generatedFirstWord,
-                        secondWord: _generatedSecondWord,
+                        backgroundColor: bg,
+                        firstWord: _firstWord,
+                        secondWord: _secondWord,
                         selectedChipIndex: _selectedChipIndex,
                         showImageBackground: false,
                       ),
                       const SizedBox(height: 16),
                       ColorSelectionSection(
+                        colors: _colors,
                         selectedColorIndex: _selectedColorIndex,
                         onColorSelected: _onColorSelected,
                       ),
@@ -417,12 +386,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      // BannerAd pinned at the bottom
       bottomNavigationBar: SafeArea(
         child:
             _isBannerAdReady
-                ? Container(
-                  color: Colors.transparent,
+                ? SizedBox(
                   width: _bannerAd!.size.width.toDouble(),
                   height: _bannerAd!.size.height.toDouble(),
                   child: AdWidget(ad: _bannerAd!),
@@ -431,4 +398,106 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+// ───────────────────────── Modal widgets ─────────────────────────
+class _CreditModal extends StatelessWidget {
+  final VoidCallback onWatchAd;
+  final bool showBuy;
+  final String buyUrl;
+  const _CreditModal({
+    required this.onWatchAd,
+    required this.showBuy,
+    required this.buyUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    child: Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SvgPicture.asset(
+              'assets/images/flash_icon.svg',
+              width: 40,
+              height: 40,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'CREDIT LIMIT REACHED',
+              style: TextStyle(fontSize: 12, letterSpacing: 1),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'WATCH AN AD TO GET 5 MORE CREDITS OR PURCHASE UNLIMITED CREDITS.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Color(0xFF959399)),
+            ),
+            const SizedBox(height: 24),
+            AmbigramButton(text: 'WATCH AD (+5)', onPressed: onWatchAd),
+            if (showBuy) ...[
+              const SizedBox(height: 12),
+              AmbigramButton(
+                text: 'BUY UNLIMITED CREDITS',
+                onPressed: () async {
+                  HapticFeedback.mediumImpact();
+                  final uri = Uri.parse(buyUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _ForceUpdateModal extends StatelessWidget {
+  final String storeUrl;
+  const _ForceUpdateModal({required this.storeUrl});
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'UPDATE REQUIRED',
+            style: TextStyle(
+              fontSize: 14,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'A newer version is available. Please update to continue.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Color(0xFF7D7A82)),
+          ),
+          const SizedBox(height: 24),
+          AmbigramButton(
+            text: 'UPDATE NOW',
+            onPressed: () async {
+              final uri = Uri.parse(storeUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
 }

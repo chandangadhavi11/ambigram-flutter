@@ -18,7 +18,7 @@
 
 
     <application
-        android:label="flutter_application_1"
+        android:label="Ambigram"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">

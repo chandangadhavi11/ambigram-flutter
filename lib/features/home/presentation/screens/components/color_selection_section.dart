@@ -5,90 +5,76 @@ import 'package:flutter_application_1/core/constants/app_colors.dart';
 import 'package:flutter_application_1/core/constants/color_pallete.dart';
 
 /// Displays a horizontal list of selectable background colors.
-class ColorSelectionSection extends StatefulWidget {
+class ColorSelectionSection extends StatelessWidget {
+  /// The list of colors you want to display.
+  /// Comes straight from Remote Config (or the local fallback).
+  final List<NamedColor> colors;
+
+  /// Currently‑selected index in [colors].
   final int selectedColorIndex;
+
+  /// Callback when the user taps a swatch.
   final ValueChanged<int> onColorSelected;
 
   const ColorSelectionSection({
     Key? key,
+    required this.colors,
     required this.selectedColorIndex,
     required this.onColorSelected,
   }) : super(key: key);
 
   @override
-  _ColorSelectionSectionState createState() => _ColorSelectionSectionState();
-}
-
-class _ColorSelectionSectionState extends State<ColorSelectionSection> {
-  @override
   Widget build(BuildContext context) {
-    final List<NamedColor> colors = ColorPalette.backgroundChoices(context);
-    final int selectedIndex = widget.selectedColorIndex;
-
-    // Safely get the currently selected color's name (for display).
+    // Safely get the currently selected color's name (for the right‑hand label).
     final String selectedColorName =
-        (selectedIndex >= 0 && selectedIndex < colors.length)
-            ? colors[selectedIndex].name.toUpperCase()
+        (selectedColorIndex >= 0 && selectedColorIndex < colors.length)
+            ? colors[selectedColorIndex].name.toUpperCase()
             : 'UNKNOWN';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header with icon and label.
-        SizedBox(
-          width: double.infinity,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 16,
-                    height: 16,
-                    decoration: const BoxDecoration(),
-                    child: Center(
-                      child: SvgPicture.asset(
-                        'assets/images/color_icon_light.svg',
-                        width: 100.0,
-                        height: 100.0,
-                        semanticsLabel: 'Color Icon',
-                        placeholderBuilder:
-                            (BuildContext context) => Container(
-                              padding: const EdgeInsets.all(30.0),
-                              child: const CircularProgressIndicator(),
-                            ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'BACKGROUND COLOR',
-                    style: TextStyle(
-                      color: AppColors.labelText(context),
-                      fontSize: 12,
-                      fontFamily: 'Averta Demo PE Cutted Demo',
-                      fontWeight: FontWeight.w400,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                selectedColorName,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: AppColors.labelText(context),
-                  fontSize: 12,
-                  fontFamily: 'Averta Demo PE Cutted Demo',
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 2,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                SvgPicture.asset(
+                  'assets/images/color_icon_light.svg',
+                  width: 16,
+                  height: 16,
+                  semanticsLabel: 'Color Icon',
                 ),
+                const SizedBox(width: 4),
+                Text(
+                  'BACKGROUND COLOR',
+                  style: TextStyle(
+                    color: AppColors.labelText(context),
+                    fontSize: 12,
+                    fontFamily: 'Averta Demo PE Cutted Demo',
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              selectedColorName,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: AppColors.labelText(context),
+                fontSize: 12,
+                fontFamily: 'Averta Demo PE Cutted Demo',
+                fontWeight: FontWeight.w400,
+                letterSpacing: 2,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
-        // Row of color swatches
+
+        // Row of color swatches.
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
@@ -100,7 +86,7 @@ class _ColorSelectionSectionState extends State<ColorSelectionSection> {
                 child: GestureDetector(
                   onTap: () {
                     HapticFeedback.mediumImpact();
-                    widget.onColorSelected(index);
+                    onColorSelected(index);
                   },
                   child: Stack(
                     alignment: Alignment.center,
@@ -118,7 +104,7 @@ class _ColorSelectionSectionState extends State<ColorSelectionSection> {
                           ),
                         ),
                       ),
-                      if (selectedIndex == index)
+                      if (selectedColorIndex == index)
                         SvgPicture.asset(
                           'assets/images/tick_icon.svg',
                           width: 10,

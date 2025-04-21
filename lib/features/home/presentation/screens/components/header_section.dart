@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-
 import 'animated_selectable_chip.dart';
 import 'package:flutter_application_1/core/constants/app_colors.dart';
 
@@ -58,7 +57,6 @@ class _HeaderSectionState extends State<HeaderSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          // space between the title area and the credit area
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             // Title area
@@ -125,7 +123,7 @@ class _HeaderSectionState extends State<HeaderSection> {
                 key: _chipKeys[index],
                 padding: const EdgeInsets.only(right: 8.0),
                 child: AnimatedSelectableChip(
-                  index: index, // pass index
+                  index: index,
                   label: label,
                   isSelected: widget.selectedChipIndex == index,
                   onTap: () => _onChipTap(index),
