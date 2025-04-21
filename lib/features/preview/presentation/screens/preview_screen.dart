@@ -22,12 +22,16 @@ class PreviewScreen extends StatefulWidget {
   final int selectedChipIndex;
   final int selectedColorIndex;
 
+  /// NEW: pass in the same list of colors you fetched in HomeScreen.
+  final List<NamedColor> colors;
+
   const PreviewScreen({
     Key? key,
     required this.firstWord,
     required this.secondWord,
     required this.selectedChipIndex,
     required this.selectedColorIndex,
+    required this.colors,
   }) : super(key: key);
 
   @override
@@ -304,10 +308,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // ───────────────────────── build ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    final bg =
-        ColorPalette.backgroundChoices(context)[widget
-            .selectedColorIndex].color;
-    final cnt = widget.firstWord.length;
+    // Get the chosen background color from the list passed in.
+    final Color bg =
+        (widget.selectedColorIndex >= 0 &&
+                widget.selectedColorIndex < widget.colors.length)
+            ? widget.colors[widget.selectedColorIndex].color
+            : Colors.white;
+
+    final int cnt = widget.firstWord.length;
 
     return Scaffold(
       bottomNavigationBar: SafeArea(
@@ -323,7 +331,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, // <─ NEW
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // back
               Padding(
@@ -343,9 +351,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   horizontal: 20,
                 ),
                 child: Align(
-                  alignment: Alignment.centerLeft, // <─ NEW
+                  alignment: Alignment.centerLeft,
                   child: Column(
-                    mainAxisSize: MainAxisSize.max,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
                       Text(

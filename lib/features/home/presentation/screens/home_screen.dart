@@ -1,4 +1,3 @@
-// home_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -35,6 +34,20 @@ class _HomeScreenState extends State<HomeScreen> {
       'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
   static const _defInitialCredits = 25;
 
+  /// NEW: default colours JSON (the same list from `_fallback` above).
+  /// Keep it small so it fits within Remote‑Config’s 64 KiB value limit.
+  static const _defColorJson = '''
+  [
+    {"name":"Off White","color":"#FAFAFA"},
+    {"name":"Pink","color":"#FFC0CB"},
+    {"name":"Baby Blue","color":"#ADD8E6"},
+    {"name":"Mint Green","color":"#AAF0D1"},
+    {"name":"Lavender","color":"#E6E6FA"},
+    {"name":"Peach","color":"#FFDAB9"},
+    {"name":"Lemon Chiffon","color":"#FFFACD"},
+    {"name":"Turquoise","color":"#AFEEEE"}
+  ]''';
+
   // ───────────────────────── Remote‑controlled values ─────────────────────────
   late String _androidBannerId = _defAndroidBanner;
   late String _iosBannerId = _defIosBanner;
@@ -43,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late List<String> _chipLabels =
       _defChips.split(',').map((e) => e.trim()).toList();
   int _remoteInitialCredits = _defInitialCredits;
+
+  /// NEW: holds the JSON string from Remote Config
+  String _backgroundColorJson = _defColorJson;
 
   // ───────────────────────── UI / runtime state ─────────────────────────
   int _selectedChipIndex = 0;
@@ -88,6 +104,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
+    _colors = ColorPalette.fromRemote(_backgroundColorJson);
+
     if (mounted) setState(() {});
   }
 
@@ -100,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
       'ios_rewarded_ad_unit_id': _defIosReward,
       'chip_labels': _defChips,
       'initial_credits': _defInitialCredits,
+      'background_colors': _defColorJson, //  ← NEW
     });
 
     try {
@@ -121,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _applyRemoteValues({bool forceAdReload = false}) {
     final oldBanner = Platform.isAndroid ? _androidBannerId : _iosBannerId;
     final oldReward = Platform.isAndroid ? _androidRewardId : _iosRewardId;
+    final oldColorsJson = _backgroundColorJson;
 
     _androidBannerId = _remoteConfig.getString(
       'android_home_banner_ad_unit_id',
@@ -135,6 +155,14 @@ class _HomeScreenState extends State<HomeScreen> {
             .map((e) => e.trim())
             .toList();
     _remoteInitialCredits = _remoteConfig.getInt('initial_credits');
+
+    _backgroundColorJson = _remoteConfig.getString('background_colors');
+
+    // Re‑parse colours if the JSON changed
+    if (oldColorsJson != _backgroundColorJson) {
+      _colors = ColorPalette.fromRemote(_backgroundColorJson);
+      _selectedColorIndex = 0; // reset to first colour for safety
+    }
 
     if (forceAdReload) {
       final newBanner = Platform.isAndroid ? _androidBannerId : _iosBannerId;
@@ -151,13 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    setState(() {}); // rebuild UI (chip list, etc.)
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _colors = ColorPalette.backgroundChoices(context);
+    setState(() {}); // rebuild UI
   }
 
   @override
@@ -280,6 +302,7 @@ class _HomeScreenState extends State<HomeScreen> {
             secondWord: _generatedSecondWord,
             selectedChipIndex: _selectedChipIndex,
             selectedColorIndex: _selectedColorIndex,
+            colors: _colors, // ← add this
           ),
     ),
   );
@@ -337,6 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 16),
                       ColorSelectionSection(
+                        colors: _colors, // ← NEW
                         selectedColorIndex: _selectedColorIndex,
                         onColorSelected: _onColorSelected,
                       ),

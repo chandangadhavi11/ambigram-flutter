@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 /// A simple class that pairs a [Color] with its descriptive [name].
@@ -5,112 +6,61 @@ class NamedColor {
   final Color color;
   final String name;
   const NamedColor({required this.color, required this.name});
+
+  /// Factory to build a `NamedColor` from the JSON object
+  /// that comes from Remote Config:
+  /// ```json
+  /// {"name":"Off White","color":"#FAFAFA"}
+  /// ```
+  factory NamedColor.fromJson(Map<String, dynamic> j) {
+    final hex = (j['color'] as String).replaceFirst('#', '');
+    // Force‑add the alpha channel (FF = opaque) then parse
+    return NamedColor(
+      color: Color(int.parse('FF$hex', radix: 16)),
+      name: j['name'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'color': '#${color.value.toRadixString(16).substring(2).toUpperCase()}',
+  };
 }
 
-/// Returns a list of 100 aesthetic [NamedColor] options.
+/// Handles *both* the baked‑in fallback colors and the
+/// list fetched from Firebase Remote Config.
 class ColorPalette {
-  static List<NamedColor> backgroundChoices(BuildContext context) {
-    return [
-      NamedColor(color: const Color(0xFFFAFAFA), name: "Off White"),
-      NamedColor(color: const Color(0xFFFFC0CB), name: "Pink"),
-      NamedColor(color: const Color(0xFFADD8E6), name: "Baby Blue"),
-      NamedColor(color: const Color(0xFFAAF0D1), name: "Mint Green"),
-      NamedColor(color: const Color(0xFFE6E6FA), name: "Lavender"),
-      NamedColor(color: const Color(0xFFFFDAB9), name: "Peach"),
-      NamedColor(color: const Color(0xFFFFFACD), name: "Lemon Chiffon"),
-      NamedColor(color: const Color(0xFFAFEEEE), name: "Turquoise"),
-      NamedColor(color: const Color(0xFFF08080), name: "Coral"),
-      NamedColor(color: const Color(0xFFFFE4E1), name: "Misty Rose"),
-      NamedColor(color: const Color(0xFFB0E0E6), name: "Powder Blue"),
-      NamedColor(color: const Color(0xFFEEE8AA), name: "Goldenrod"),
-      NamedColor(color: const Color(0xFFF0FFF0), name: "Honeydew"),
-      NamedColor(color: const Color(0xFFE0FFFF), name: "Cyan"),
-      NamedColor(color: const Color(0xFFFFFFE0), name: "Yellow"),
-      NamedColor(color: const Color(0xFF87CEEB), name: "Sky Blue"),
-      NamedColor(color: const Color(0xFFC8A2C8), name: "Lilac"),
-      NamedColor(color: const Color(0xFFFFF5EE), name: "Seashell"),
-      NamedColor(color: const Color(0xFFFFFFF0), name: "Ivory"),
-      NamedColor(color: const Color(0xFFF5F5DC), name: "Beige"),
-      NamedColor(color: const Color(0xFFFBCEB1), name: "Apricot"),
-      NamedColor(color: const Color(0xFFFFB347), name: "Orange"),
-      NamedColor(color: const Color(0xFF77DD77), name: "Green"),
-      NamedColor(color: const Color(0xFFB39EB5), name: "Purple"),
-      NamedColor(color: const Color(0xFFAEC6CF), name: "Blue"),
-      NamedColor(color: const Color(0xFFFF6961), name: "Red"),
-      NamedColor(color: const Color(0xFFFFA07A), name: "Salmon"),
-      NamedColor(color: const Color(0xFF87CEFA), name: "Light Blue"),
-      NamedColor(color: const Color(0xFF98FB98), name: "Pale Green"),
-      NamedColor(color: const Color(0xFFB0C4DE), name: "Steel Blue"),
-      NamedColor(color: const Color(0xFFD8BFD8), name: "Thistle"),
-      NamedColor(color: const Color(0xFFDA70D6), name: "Orchid"),
-      NamedColor(color: const Color(0xFFDDA0DD), name: "Plum"),
-      NamedColor(color: const Color(0xFFFFB6C1), name: "Light Pink"),
-      NamedColor(color: const Color(0xFFFFE5B4), name: "Pale Peach"),
-      NamedColor(color: const Color(0xFFF5FFFA), name: "Mint Cream"),
-      NamedColor(color: const Color(0xFFFFFDD0), name: "Cream"),
-      NamedColor(color: const Color(0xFFEEDFF6), name: "Soft Lilac"),
-      NamedColor(color: const Color(0xFFA0E7E5), name: "Turquoise Blue"),
-      NamedColor(color: const Color(0xFFC3CDE6), name: "Periwinkle"),
-      NamedColor(color: const Color(0xFFFFFF99), name: "Pastel Yellow"),
-      NamedColor(color: const Color(0xFFB3CDE0), name: "Soft Blue"),
-      NamedColor(color: const Color(0xFFCDEAC0), name: "Soft Green"),
-      NamedColor(color: const Color(0xFFD7BDE2), name: "Soft Lavender"),
-      NamedColor(color: const Color(0xFFFFDDEE), name: "Blush"),
-      NamedColor(color: const Color(0xFFFFDFDF), name: "Powder Pink"),
-      NamedColor(color: const Color(0xFFFFABAB), name: "Coral Pink"),
-      NamedColor(color: const Color(0xFFDFFFD6), name: "Baby Mint"),
-      NamedColor(color: const Color(0xFFFFE0B3), name: "Light Peach"),
-      NamedColor(color: const Color(0xFFFFE5CC), name: "Soft Apricot"),
-      NamedColor(color: const Color(0xFFE0B0FF), name: "Pale Mauve"),
-      NamedColor(color: const Color(0xFFCCFF99), name: "Pastel Lime"),
-      NamedColor(color: const Color(0xFFAAF0FF), name: "Pastel Aqua"),
-      NamedColor(color: const Color(0xFFFFA6C9), name: "Pastel Berry"),
-      NamedColor(color: const Color(0xFFE29CD2), name: "Pastel Orchid"),
-      NamedColor(color: const Color(0xFFEEA9B8), name: "Light Plum"),
-      NamedColor(color: const Color(0xFFD0DFF7), name: "Pastel Periwinkle"),
-      NamedColor(color: const Color(0xFFEEBBFF), name: "Soft Violet"),
-      NamedColor(color: const Color(0xFFFFC1CC), name: "Pastel Rose"),
-      NamedColor(color: const Color(0xFFFFB3DE), name: "Light Magenta"),
-      NamedColor(color: const Color(0xFFFFC8DC), name: "Soft Carnation"),
-      NamedColor(color: const Color(0xFFEED2EE), name: "Light Mauve"),
-      NamedColor(color: const Color(0xFFE3E4FA), name: "Pastel Lavender"),
-      NamedColor(color: const Color(0xFFE7D9EC), name: "Pale Lilac"),
-      NamedColor(color: const Color(0xFFFFB5E8), name: "Pastel Fuchsia"),
-      NamedColor(color: const Color(0xFFFFA8A8), name: "Pastel Salmon"),
-      NamedColor(color: const Color(0xFFFFD2A6), name: "Light Tangerine"),
-      NamedColor(color: const Color(0xFFFFE5A0), name: "Pastel Gold"),
-      NamedColor(color: const Color(0xFFFFE0A8), name: "Light Amber"),
-      NamedColor(color: const Color(0xFFFFF5A5), name: "Soft Canary"),
-      NamedColor(color: const Color(0xFFDFFFE0), name: "Cool Mint"),
-      NamedColor(color: const Color(0xFFB0E2FF), name: "Pastel Sky"),
-      NamedColor(color: const Color(0xFFB2FFFF), name: "Azure"),
-      NamedColor(color: const Color(0xFFCBCDE6), name: "Soft Periwinkle"),
-      NamedColor(color: const Color(0xFFB0D0E0), name: "Denim"),
-      NamedColor(color: const Color(0xFF91A8D0), name: "Cerulean"),
-      NamedColor(color: const Color(0xFFC8B7D9), name: "Dusty Lilac"),
-      NamedColor(color: const Color(0xFFD8A8D8), name: "Soft Mauve"),
-      NamedColor(color: const Color(0xFFFFDDE4), name: "Blush Pink"),
-      NamedColor(color: const Color(0xFFFFC9E3), name: "Orchid Pink"),
-      NamedColor(color: const Color(0xFFFFD4E0), name: "Blush Rose"),
-      NamedColor(color: const Color(0xFFFFEBD6), name: "Fawn"),
-      NamedColor(color: const Color(0xFFFAF0E6), name: "Champagne"),
-      NamedColor(color: const Color(0xFFFFF1E0), name: "Biscuit"),
-      NamedColor(color: const Color(0xFFFFE5C4), name: "Caramel"),
-      NamedColor(color: const Color(0xFFFFF4E0), name: "Almond"),
-      NamedColor(color: const Color(0xFFFFF0C1), name: "Honey"),
-      NamedColor(color: const Color(0xFFFFF1A1), name: "Butter"),
-      NamedColor(color: const Color(0xFFFFF8E1), name: "Soft Ivory"),
-      NamedColor(color: const Color(0xFFF5EBDD), name: "Light Sand"),
-      NamedColor(color: const Color(0xFFFFE7EB), name: "Pastel Blush"),
-      NamedColor(color: const Color(0xFFFFE1E6), name: "Rose Quartz"),
-      NamedColor(color: const Color(0xFFF0F8FF), name: "Cloud"),
-      NamedColor(color: const Color(0xFFCCCCFF), name: "Periwinkle Blue"),
-      NamedColor(color: const Color(0xFFD0EFFF), name: "Morning Blue"),
-      NamedColor(color: const Color(0xFFE0F7FA), name: "Water"),
-      NamedColor(color: const Color(0xFFF2FFF2), name: "Light Cream"),
-      NamedColor(color: const Color(0xFFDEFDE0), name: "Garden"),
-      NamedColor(color: const Color(0xFFE0F8E0), name: "Meadow"),
-      NamedColor(color: const Color(0xFFEFF7FF), name: "Breeze"),
-    ];
+  /// The list that ships in the app (used when Remote Config
+  /// hasn’t delivered anything yet, or if parsing fails).
+  static const List<NamedColor> _fallback = [
+    NamedColor(color: Color(0xFFFAFAFA), name: "Off White"),
+    NamedColor(color: Color(0xFFFFC0CB), name: "Pink"),
+    NamedColor(color: Color(0xFFADD8E6), name: "Baby Blue"),
+    NamedColor(color: Color(0xFFAAF0D1), name: "Mint Green"),
+    NamedColor(color: Color(0xFFE6E6FA), name: "Lavender"),
+    NamedColor(color: Color(0xFFFFDAB9), name: "Peach"),
+    NamedColor(color: Color(0xFFFFFACD), name: "Lemon Chiffon"),
+    NamedColor(color: Color(0xFFAFEEEE), name: "Turquoise"),
+    NamedColor(color: Color(0xFFF08080), name: "Coral"),
+    NamedColor(color: Color(0xFFFFE4E1), name: "Misty Rose"),
+    //  …keep or remove as many fallback colours as you like
+  ];
+
+  /// Parse the JSON string coming from Remote Config and
+  /// return a list of `NamedColor`.
+  /// Falls back gracefully to `[_fallback]` if something
+  /// goes wrong.
+  static List<NamedColor> fromRemote(String jsonString) {
+    try {
+      final decoded = jsonDecode(jsonString) as List<dynamic>;
+      return decoded
+          .map((e) => NamedColor.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return _fallback;
+    }
   }
+
+  /// Convenience getter so old calls still compile.
+  static List<NamedColor> fallbackChoices() => _fallback;
 }
