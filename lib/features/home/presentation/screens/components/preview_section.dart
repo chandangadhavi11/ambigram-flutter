@@ -1,11 +1,16 @@
+// preview_section.dart
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
 
+/// A single, scroll‑safe row that previews the generated ambigram letters.
 class PreviewSection extends StatefulWidget {
   final int imageCount;
   final Color backgroundColor;
@@ -25,226 +30,187 @@ class PreviewSection extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _PreviewSectionState createState() => _PreviewSectionState();
+  State<PreviewSection> createState() => _PreviewSectionState();
 }
 
 class _PreviewSectionState extends State<PreviewSection> {
+  // ───────────────────────── Remote‑Config defaults ─────────────────────────
+  static const _defSvgBase = 'https://d2p3tez4zcgtm0.cloudfront.net/ambigram-';
+
+  final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
+  StreamSubscription<RemoteConfigUpdate>? _rcSub;
+  String _svgBaseUrl = _defSvgBase;
+
+  // ───────────────────────── connectivity & images ─────────────────────────
   bool _noInternet = false;
-  double _rotationAngle = 0.0;
+  Future<List<Uint8List?>>? _imagesFuture;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
 
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  Future<List<Uint8List?>>?
-  _imagesFuture; // store Uint8List? instead of Uint8List
+  // rotation
+  double _rotationAngle = 0;
 
+  // ───────────────────────── lifecycle ─────────────────────────
   @override
   void initState() {
     super.initState();
+    _setupRemoteConfig();
     _maybeLoadImages();
 
-    // Listen for connectivity changes:
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      List<ConnectivityResult> results,
-    ) {
-      if (results.contains(ConnectivityResult.none)) {
+    _connSub = Connectivity().onConnectivityChanged.listen((r) {
+      if (r.contains(ConnectivityResult.none)) {
         setState(() {
           _noInternet = true;
-          _imagesFuture = null; // Clear old data
+          _imagesFuture = null;
         });
       } else {
         setState(() {
           _noInternet = false;
-          if (widget.imageCount > 0) {
-            _imagesFuture = _loadAllSvgs();
-          }
+          _maybeLoadImages();
         });
       }
     });
   }
 
+  Future<void> _setupRemoteConfig() async {
+    await _rc.setDefaults({'svg_base_url': _defSvgBase});
+    try {
+      await _rc.setConfigSettings(
+        RemoteConfigSettings(
+          minimumFetchInterval: const Duration(hours: 1),
+          fetchTimeout: const Duration(seconds: 10),
+        ),
+      );
+      await _rc.fetchAndActivate();
+    } catch (_) {
+      /* ignore */
+    }
+    _applyRemoteValue(forceImageReload: true);
+
+    _rcSub = _rc.onConfigUpdated.listen((_) async {
+      await _rc.activate();
+      _applyRemoteValue(forceImageReload: true);
+    });
+  }
+
+  void _applyRemoteValue({bool forceImageReload = false}) {
+    final oldBase = _svgBaseUrl;
+    _svgBaseUrl =
+        _rc.getString('svg_base_url').trim().isEmpty
+            ? _defSvgBase
+            : _rc.getString('svg_base_url');
+
+    if (forceImageReload || _svgBaseUrl != oldBase) {
+      _imagesFuture = null;
+      _maybeLoadImages();
+    }
+    if (mounted) setState(() {});
+  }
+
   @override
-  void didUpdateWidget(covariant PreviewSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // If any relevant fields changed, re-fetch:
-    if (widget.imageCount != oldWidget.imageCount ||
-        widget.firstWord != oldWidget.firstWord ||
-        widget.secondWord != oldWidget.secondWord ||
-        widget.selectedChipIndex != oldWidget.selectedChipIndex ||
-        widget.showImageBackground != oldWidget.showImageBackground) {
-      setState(() {
-        _imagesFuture = null;
-        _maybeLoadImages();
-      });
+  void didUpdateWidget(covariant PreviewSection old) {
+    super.didUpdateWidget(old);
+    if (widget.imageCount != old.imageCount ||
+        widget.firstWord != old.firstWord ||
+        widget.secondWord != old.secondWord ||
+        widget.selectedChipIndex != old.selectedChipIndex ||
+        widget.showImageBackground != old.showImageBackground) {
+      _imagesFuture = null;
+      _maybeLoadImages();
     }
   }
 
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
+    _connSub?.cancel();
+    _rcSub?.cancel();
     super.dispose();
   }
 
-  /// Checks connectivity once and, if online, sets `_imagesFuture`.
+  // ───────────────────────── image fetching ─────────────────────────
   Future<void> _maybeLoadImages() async {
     if (widget.imageCount == 0) return;
-
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult == ConnectivityResult.none) {
-      setState(() {
-        _noInternet = true;
-      });
-    } else {
-      setState(() {
-        _noInternet = false;
-        _imagesFuture = _loadAllSvgs();
-      });
+    final conn = await Connectivity().checkConnectivity();
+    if (conn == ConnectivityResult.none) {
+      setState(() => _noInternet = true);
+      return;
     }
+    setState(() {
+      _noInternet = false;
+      _imagesFuture = Future.wait(List.generate(widget.imageCount, _fetchSvg));
+    });
   }
 
-  /// Fetch all SVGs and return them as a list of bytes.
-  /// If a single request fails, store `null` for that index,
-  /// so we can still show partial results for the rest.
-  Future<List<Uint8List?>> _loadAllSvgs() async {
-    final List<Future<Uint8List?>> fetchFutures = [];
-
-    for (int i = 0; i < widget.imageCount; i++) {
-      fetchFutures.add(_fetchSvgBytes(i));
-    }
-
-    return Future.wait(fetchFutures);
-  }
-
-  /// Safely fetch the SVG for index `i`. Returns `null` if fetch fails.
-  Future<Uint8List?> _fetchSvgBytes(int i) async {
+  Future<Uint8List?> _fetchSvg(int i) async {
     try {
-      final firstLetter = widget.firstWord[i].toLowerCase();
-      final secondLetter =
+      final f = widget.firstWord[i].toLowerCase();
+      final s =
           widget.secondWord.isNotEmpty
               ? widget.secondWord[widget.secondWord.length - 1 - i]
                   .toLowerCase()
               : widget.firstWord[widget.firstWord.length - 1 - i].toLowerCase();
-
-      final isFlipped = firstLetter.compareTo(secondLetter) > 0;
-      final letterPair =
-          isFlipped ? '$secondLetter$firstLetter' : '$firstLetter$secondLetter';
-
-      final svgUrl =
-          'https://d2p3tez4zcgtm0.cloudfront.net/ambigram-${widget.selectedChipIndex}/$letterPair.svg';
-
-      final response = await http.get(Uri.parse(svgUrl));
-
-      if (response.statusCode == 200) {
-        return response.bodyBytes;
-      } else {
-        // Return null (image fail)
-        return null;
-      }
-    } catch (e) {
-      // Return null on any fetch error
+      final pair = f.compareTo(s) > 0 ? '$s$f' : '$f$s';
+      final url = '$_svgBaseUrl${widget.selectedChipIndex}/$pair.svg';
+      final res = await http.get(Uri.parse(url));
+      return res.statusCode == 200 ? res.bodyBytes : null;
+    } catch (_) {
       return null;
     }
   }
 
-  void _rotatePreview() {
+  // ───────────────────────── UI helpers ─────────────────────────
+  void _rotate() {
     HapticFeedback.lightImpact();
-    setState(() {
-      _rotationAngle += pi; // Rotate 180 degrees
-    });
+    setState(() => _rotationAngle += pi);
   }
 
+  // ───────────────────────── build ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    // If no images are requested:
     if (widget.imageCount == 0) {
-      return Container(
-        width: double.infinity,
-        height: 220,
-        color: widget.backgroundColor,
-        alignment: Alignment.center,
-        child: const Text(
-          "CLICK ON GENERATE TO PREVIEW",
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: Colors.black,
-          ),
-        ),
+      return _placeholder(
+        widget.backgroundColor,
+        'CLICK ON GENERATE TO PREVIEW',
       );
     }
-
-    // If there's no internet:
     if (_noInternet) {
-      return Container(
-        width: double.infinity,
-        height: 220,
-        color: widget.backgroundColor,
-        alignment: Alignment.center,
-        child: const Text(
-          "PLEASE CONNECT TO INTERNET TO GENERATE AMBIGRAM",
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
-        ),
-      );
+      return _placeholder(widget.backgroundColor, 'PLEASE CONNECT TO INTERNET');
     }
 
-    // Otherwise, show the FutureBuilder
     return GestureDetector(
-      onTap: _rotatePreview,
+      onTap: _rotate,
       child: AnimatedRotation(
         turns: _rotationAngle / (2 * pi),
         duration: const Duration(milliseconds: 300),
         child: FutureBuilder<List<Uint8List?>>(
           future: _imagesFuture,
-          builder: (context, snapshot) {
-            // Show "LOADING..." if waiting:
+          builder: (ctx, snap) {
             if (_imagesFuture == null ||
-                snapshot.connectionState == ConnectionState.waiting ||
-                !snapshot.hasData) {
-              return Container(
-                width: double.infinity,
-                height: 220,
-                color: widget.backgroundColor,
-                alignment: Alignment.center,
-                child: const Text(
-                  "LOADING...",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    color: Colors.black,
-                  ),
-                ),
-              );
+                snap.connectionState == ConnectionState.waiting ||
+                !snap.hasData) {
+              return _placeholder(widget.backgroundColor, 'LOADING...');
             }
 
-            // Data loaded: either valid bytes or null for each image
-            final svgBytesList = snapshot.data!;
-
+            final bytesList = snap.data!;
             return Container(
               width: double.infinity,
               height: 220,
               color: widget.backgroundColor,
               padding: const EdgeInsets.all(12),
-              // FittedBox with BoxFit.contain prevents cropping
               child: FittedBox(
                 fit: BoxFit.contain,
-                alignment: Alignment.center,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: List.generate(widget.imageCount, (index) {
-                    final firstLetter = widget.firstWord[index].toLowerCase();
-                    final secondLetter =
+                  children: List.generate(widget.imageCount, (i) {
+                    final f = widget.firstWord[i].toLowerCase();
+                    final s =
                         widget.secondWord.isNotEmpty
                             ? widget
-                                .secondWord[widget.secondWord.length -
-                                    1 -
-                                    index]
+                                .secondWord[widget.secondWord.length - 1 - i]
                                 .toLowerCase()
-                            : widget
-                                .firstWord[widget.firstWord.length - 1 - index]
+                            : widget.firstWord[widget.firstWord.length - 1 - i]
                                 .toLowerCase();
-                    final isFlipped = firstLetter.compareTo(secondLetter) > 0;
+                    final bytes = bytesList[i];
 
-                    final bytes = svgBytesList[index];
-
-                    // If null, show error placeholder
                     if (bytes == null) {
                       return Container(
                         width: 60,
@@ -253,20 +219,18 @@ class _PreviewSectionState extends State<PreviewSection> {
                         color: Colors.red.shade100,
                         alignment: Alignment.center,
                         child: const Text(
-                          "ERR",
+                          'ERR',
                           style: TextStyle(fontSize: 14, color: Colors.red),
                         ),
                       );
                     }
 
-                    // Construct the image widget:
-                    final svgWidget = SvgPicture.memory(
+                    final svg = SvgPicture.memory(
                       bytes,
                       height: 300,
                       fit: BoxFit.contain,
                     );
-
-                    // Wrap with a background color if needed:
+                    final flip = f.compareTo(s) > 0;
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 0),
                       padding: const EdgeInsets.all(4),
@@ -275,9 +239,7 @@ class _PreviewSectionState extends State<PreviewSection> {
                               ? Colors.amber.withOpacity(0.2)
                               : Colors.transparent,
                       child:
-                          isFlipped
-                              ? Transform.rotate(angle: pi, child: svgWidget)
-                              : svgWidget,
+                          flip ? Transform.rotate(angle: pi, child: svg) : svg,
                     );
                   }),
                 ),
@@ -288,4 +250,20 @@ class _PreviewSectionState extends State<PreviewSection> {
       ),
     );
   }
+
+  Widget _placeholder(Color bg, String txt) => Container(
+    width: double.infinity,
+    height: 220,
+    color: bg,
+    alignment: Alignment.center,
+    child: Text(
+      txt,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 1.2,
+        color: Colors.black54,
+      ),
+    ),
+  );
 }

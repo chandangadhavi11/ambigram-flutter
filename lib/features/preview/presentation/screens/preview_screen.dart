@@ -21,9 +21,7 @@ class PreviewScreen extends StatefulWidget {
   final String secondWord;
   final int selectedChipIndex;
   final int selectedColorIndex;
-
-  /// NEW: pass in the same list of colors you fetched in HomeScreen.
-  final List<NamedColor> colors;
+  final List<NamedColor> colors; // passed from HomeScreen
 
   const PreviewScreen({
     Key? key,
@@ -47,13 +45,16 @@ class _PreviewScreenState extends State<PreviewScreen> {
   static const _defIosInt = 'ca-app-pub-3940256099942544/4411468910';
   static const _defAndroidBan = 'ca-app-pub-3940256099942544/6300978111';
   static const _defIosBan = 'ca-app-pub-3940256099942544/2934735716';
+  static const _defSvgBase = 'https://d2p3tez4zcgtm0.cloudfront.net/ambigram-';
 
+  // Remote‑controlled vars
   late String _androidStoreUrl = _defAndroidStore;
   late String _iosStoreUrl = _defIosStore;
   late String _androidIntId = _defAndroidInt;
   late String _iosIntId = _defIosInt;
   late String _androidBannerId = _defAndroidBan;
   late String _iosBannerId = _defIosBan;
+  late String _svgBaseUrl = _defSvgBase; // <── NEW
 
   final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
   StreamSubscription<RemoteConfigUpdate>? _rcSub;
@@ -84,7 +85,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
     _loadInterstitialAd();
     _loadBannerAd();
 
-    // connectivity listener
     _connSub = Connectivity().onConnectivityChanged.listen((r) {
       if (r.contains(ConnectivityResult.none)) {
         setState(() {
@@ -108,6 +108,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       'ios_interstitial_ad_unit_id': _defIosInt,
       'android_banner_ad_unit_id': _defAndroidBan,
       'ios_banner_ad_unit_id': _defIosBan,
+      'svg_base_url': _defSvgBase,
     });
 
     try {
@@ -123,16 +124,19 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
     _applyRemoteValues();
 
-    // live updates
-    _rcSub = _rc.onConfigUpdated.listen((event) async {
+    _rcSub = _rc.onConfigUpdated.listen((_) async {
       await _rc.activate();
-      _applyRemoteValues(forceAdReload: true);
+      _applyRemoteValues(forceAdReload: true, forceImageReload: true);
     });
   }
 
-  void _applyRemoteValues({bool forceAdReload = false}) {
+  void _applyRemoteValues({
+    bool forceAdReload = false,
+    bool forceImageReload = false,
+  }) {
     final oldInt = Platform.isAndroid ? _androidIntId : _iosIntId;
     final oldBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+    final oldBase = _svgBaseUrl;
 
     _androidStoreUrl = _rc.getString('android_store_url');
     _iosStoreUrl = _rc.getString('ios_store_url');
@@ -140,6 +144,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
     _iosIntId = _rc.getString('ios_interstitial_ad_unit_id');
     _androidBannerId = _rc.getString('android_banner_ad_unit_id');
     _iosBannerId = _rc.getString('ios_banner_ad_unit_id');
+    _svgBaseUrl =
+        _rc.getString('svg_base_url').trim().isEmpty
+            ? _defSvgBase
+            : _rc.getString('svg_base_url');
 
     if (forceAdReload) {
       final newInt = Platform.isAndroid ? _androidIntId : _iosIntId;
@@ -154,6 +162,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
         _isBannerLoaded = false;
         _loadBannerAd();
       }
+    }
+
+    if (forceImageReload || _svgBaseUrl != oldBase) {
+      _imagesFuture = null;
+      _maybeLoadImages();
     }
 
     if (mounted) setState(() {});
@@ -243,7 +256,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
               : widget.firstWord[widget.firstWord.length - 1 - i].toLowerCase();
       final pair = f.compareTo(s) > 0 ? '$s$f' : '$f$s';
       final uri = Uri.parse(
-        'https://d2p3tez4zcgtm0.cloudfront.net/ambigram-${widget.selectedChipIndex}/$pair.svg',
+        '$_svgBaseUrl${widget.selectedChipIndex}/$pair.svg',
       );
       final res = await http.get(uri);
       return res.statusCode == 200 ? res.bodyBytes : null;
@@ -283,7 +296,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
       if (++_actionCount % 2 == 0) _tryShowInterstitial();
     } catch (e) {
-      _snack('Error while sharing: $e');
+      _snack('Error sharing: $e');
     }
   }
 
@@ -295,10 +308,10 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
     try {
       await _methodChannel.invokeMethod('saveImageToGallery', _captured!);
-      _snack('Image saved to gallery!');
+      _snack('Image saved!');
       if (++_actionCount % 2 == 0) _tryShowInterstitial();
     } on PlatformException catch (e) {
-      _snack('Error saving image: $e');
+      _snack('Save failed: $e');
     }
   }
 
@@ -308,14 +321,13 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // ───────────────────────── build ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Get the chosen background color from the list passed in.
-    final Color bg =
+    final bg =
         (widget.selectedColorIndex >= 0 &&
                 widget.selectedColorIndex < widget.colors.length)
             ? widget.colors[widget.selectedColorIndex].color
             : Colors.white;
 
-    final int cnt = widget.firstWord.length;
+    final cnt = widget.firstWord.length;
 
     return Scaffold(
       bottomNavigationBar: SafeArea(
@@ -350,22 +362,19 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   vertical: 16,
                   horizontal: 20,
                 ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'YOU CAN DOWNLOAD THE',
-                        style: TextStyle(fontSize: 12, letterSpacing: 1),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'PREVIEW',
-                        style: TextStyle(fontSize: 20, letterSpacing: 4),
-                      ),
-                    ],
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'YOU CAN DOWNLOAD THE',
+                      style: TextStyle(fontSize: 12, letterSpacing: 1),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'PREVIEW',
+                      style: TextStyle(fontSize: 20, letterSpacing: 4),
+                    ),
+                  ],
                 ),
               ),
               // preview
@@ -414,12 +423,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // ───────────────────────── preview builder ─────────────────────────
   Widget _buildPreview(Color bg, int count) {
     if (count == 0) return _placeholder(bg, 'CLICK ON GENERATE TO PREVIEW');
-    if (_noInternet) {
-      return _placeholder(
-        bg,
-        'PLEASE CONNECT TO INTERNET TO GENERATE AMBIGRAM',
-      );
-    }
+    if (_noInternet) return _placeholder(bg, 'PLEASE CONNECT TO INTERNET');
 
     return FutureBuilder<List<Uint8List?>>(
       future: _imagesFuture,
