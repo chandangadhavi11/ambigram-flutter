@@ -140,7 +140,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
     if (forceAdReload) {
       final newInt = Platform.isAndroid ? _androidIntId : _iosIntId;
       final newBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
-
       if (newInt != oldInt) {
         _interstitialAd?.dispose();
         _isIntLoaded = false;
@@ -199,9 +198,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) => setState(() => _isBannerLoaded = true),
-        onAdFailedToLoad: (ad, _) {
-          ad.dispose();
-        },
+        onAdFailedToLoad: (ad, _) => ad.dispose(),
       ),
     )..load();
   }
@@ -326,6 +323,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, // <─ NEW
             children: [
               // back
               Padding(
@@ -341,31 +339,34 @@ class _PreviewScreenState extends State<PreviewScreen> {
               // header
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  // horizontal: 16,
                   vertical: 16,
+                  horizontal: 20,
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.max,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'YOU CAN DOWNLOAD THE',
-                      style: TextStyle(
-                        color: Color(0xFF959398),
-                        fontSize: 12,
-                        letterSpacing: 1,
+                child: Align(
+                  alignment: Alignment.centerLeft, // <─ NEW
+                  child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'YOU CAN DOWNLOAD THE',
+                        style: TextStyle(
+                          color: Color(0xFF959398),
+                          fontSize: 12,
+                          letterSpacing: 1,
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'PREVIEW',
-                      style: TextStyle(
-                        color: Color(0xFF2B2733),
-                        fontSize: 20,
-                        letterSpacing: 4,
+                      SizedBox(height: 4),
+                      Text(
+                        'PREVIEW',
+                        style: TextStyle(
+                          color: Color(0xFF2B2733),
+                          fontSize: 20,
+                          letterSpacing: 4,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               // preview
@@ -414,11 +415,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
   // ───────────────────────── preview builder ─────────────────────────
   Widget _buildPreview(Color bg, int count) {
     if (count == 0) return _placeholder(bg, 'CLICK ON GENERATE TO PREVIEW');
-    if (_noInternet)
+    if (_noInternet) {
       return _placeholder(
         bg,
         'PLEASE CONNECT TO INTERNET TO GENERATE AMBIGRAM',
       );
+    }
 
     return FutureBuilder<List<Uint8List?>>(
       future: _imagesFuture,
