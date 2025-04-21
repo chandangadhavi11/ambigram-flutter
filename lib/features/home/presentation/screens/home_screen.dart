@@ -1,4 +1,3 @@
-// lib/screens/home_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -37,7 +36,6 @@ class _HomeScreenState extends State<HomeScreen> {
       'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
   static const _defInitialCredits = 25;
 
-  /// Default colour set (keep tiny – Remote‑Config string limit is 64 KiB).
   static const _defColorJson = '''
   [
     {"name":"Off White","color":"#FAFAFA"},
@@ -65,7 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
   late List<String> _chipLabels =
       _defChips.split(',').map((e) => e.trim()).toList();
   int _remoteInitialCredits = _defInitialCredits;
-
   String _backgroundColorJson = _defColorJson;
 
   // ───────────────────────── UI / runtime state ─────────────────────────
@@ -75,9 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _credits = _defInitialCredits;
   int _selectedColorIndex = 0;
-
-  /// 👈  INITIALISE IMMEDIATELY to avoid LateInitializationError
-  List<NamedColor> _colors = ColorPalette.fromRemote(_defColorJson);
+  List<NamedColor> _colors = ColorPalette.fromRemote(
+    _defColorJson,
+  ); // 👈 initialise
 
   String _generatedFirstWord = '';
   String _generatedSecondWord = '';
@@ -92,13 +89,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ───────────────────────── Force‑update state ─────────────────────────
   bool _mustUpdate = false;
-  String _storeUrl = _defAndroidUrl; // overwritten per‑platform
+  String _storeUrl = _defAndroidUrl;
 
   // ───────────────────────── lifecycle ─────────────────────────
   @override
   void initState() {
     super.initState();
-    _bootstrap(); // single async entry
+    _bootstrap();
   }
 
   Future<void> _bootstrap() async {
@@ -108,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _createBannerAd();
     _loadRewardedAd();
 
-    // Listen for live Remote‑Config pushes
     _rcSub = _remoteConfig.onConfigUpdated.listen((update) async {
       try {
         await _remoteConfig.activate();
@@ -119,13 +115,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
-    if (mounted) setState(() {}); // first rebuild
+    if (mounted) setState(() {});
   }
 
   // INITIAL FETCH & DEFAULTS
   Future<void> _setupRemoteConfig() async {
     await _remoteConfig.setDefaults({
-      // existing defaults …
       'android_home_banner_ad_unit_id': _defAndroidBanner,
       'ios_home_banner_ad_unit_id': _defIosBanner,
       'android_rewarded_ad_unit_id': _defAndroidReward,
@@ -133,8 +128,6 @@ class _HomeScreenState extends State<HomeScreen> {
       'chip_labels': _defChips,
       'initial_credits': _defInitialCredits,
       'background_colors': _defColorJson,
-
-      // force‑update defaults
       'min_android_build': _defMinAndroidBuild,
       'min_ios_build': _defMinIosBuild,
       'android_store_url': _defAndroidUrl,
@@ -175,10 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
             .map((e) => e.trim())
             .toList();
     _remoteInitialCredits = _remoteConfig.getInt('initial_credits');
-
     _backgroundColorJson = _remoteConfig.getString('background_colors');
 
-    // Re‑parse colours if JSON changed
     if (oldColorsJson != _backgroundColorJson) {
       _colors = ColorPalette.fromRemote(_backgroundColorJson);
       _selectedColorIndex = 0;
@@ -198,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    if (mounted) setState(() {}); // rebuild UI
+    if (mounted) setState(() {});
   }
 
   // ───────────────────────── Shared‑prefs for credits ─────────────────────────
@@ -289,7 +280,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // FIX: no credit deduction if same chip, and block change when credits are 0
   void _onChipSelected(int i) async {
+    // ‑‑ Return early if user tapped the already‑selected chip
+    if (i == _selectedChipIndex) return;
+
     if (_credits > 0) {
       setState(() {
         _credits--;
@@ -298,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await _saveCredits();
     } else {
       _showCreditLimitModal();
-      setState(() => _selectedChipIndex = i);
+      // Do NOT change selectedChipIndex when credits are exhausted
     }
   }
 
@@ -352,7 +347,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted && shouldUpdate && !_mustUpdate) {
       setState(() => _mustUpdate = true);
 
-      // open modal after current frame
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showForceUpdateModal(),
       );
@@ -548,11 +542,6 @@ class _ForceUpdateModal extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // SvgPicture.asset(
-            //   'assets/images/update_icon.svg',
-            //   width: 56,
-            //   height: 56,
-            // ),
             const SizedBox(height: 12),
             const Text(
               'UPDATE REQUIRED',
@@ -564,8 +553,7 @@ class _ForceUpdateModal extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'A NEWER, MORE STABLE VERSION IS AVAILABLE.\n'
-              'PLEASE UPDATE TO CONTINUE.',
+              'A NEWER, MORE STABLE VERSION IS AVAILABLE.\nPLEASE UPDATE TO CONTINUE.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Color(0xFF7D7A82)),
             ),
