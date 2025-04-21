@@ -35,97 +35,54 @@ class PreviewScreen extends StatefulWidget {
 }
 
 class _PreviewScreenState extends State<PreviewScreen> {
-  // ───────────────────────── Remote‑configurable values ─────────────────────────
-  // Store links (kept from previous step)
-  static const _kDefaultAndroidStoreUrl =
+  // ───────────────────────── Remote‑Config defaults ─────────────────────────
+  static const _defAndroidStore =
       'https://play.google.com/store/apps/details?id=com.placeholder.android';
-  static const _kDefaultIosStoreUrl = 'test';
+  static const _defIosStore = 'https://apps.apple.com/app/id0000000000';
+  static const _defAndroidInt = 'ca-app-pub-3940256099942544/1033173712';
+  static const _defIosInt = 'ca-app-pub-3940256099942544/4411468910';
+  static const _defAndroidBan = 'ca-app-pub-3940256099942544/6300978111';
+  static const _defIosBan = 'ca-app-pub-3940256099942544/2934735716';
 
-  late String _androidStoreUrl = _kDefaultAndroidStoreUrl;
-  late String _iosStoreUrl = _kDefaultIosStoreUrl;
+  late String _androidStoreUrl = _defAndroidStore;
+  late String _iosStoreUrl = _defIosStore;
+  late String _androidIntId = _defAndroidInt;
+  late String _iosIntId = _defIosInt;
+  late String _androidBannerId = _defAndroidBan;
+  late String _iosBannerId = _defIosBan;
 
-  // Ad unit IDs (test IDs as sane defaults)
-  static const _kDefAndroidInterstitial =
-      'ca-app-pub-3940256099942544/1033173712';
-  static const _kDefIosInterstitial = 'ca-app-pub-3940256099942544/4411468910';
-  static const _kDefAndroidBanner = 'ca-app-pub-3940256099942544/6300978111';
-  static const _kDefIosBanner = 'ca-app-pub-3940256099942544/2934735716';
-
-  late String _androidInterstitialId = _kDefAndroidInterstitial;
-  late String _iosInterstitialId = _kDefIosInterstitial;
-  late String _androidBannerId = _kDefAndroidBanner;
-  late String _iosBannerId = _kDefIosBanner;
-
-  // Firebase Remote Config
-  final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
-
-  Future<void> _initRemoteConfig() async {
-    await _remoteConfig.setDefaults({
-      'android_store_url': _kDefaultAndroidStoreUrl,
-      'ios_store_url': _kDefaultIosStoreUrl,
-      'android_interstitial_ad_unit_id': _kDefAndroidInterstitial,
-      'ios_interstitial_ad_unit_id': _kDefIosInterstitial,
-      'android_banner_ad_unit_id': _kDefAndroidBanner,
-      'ios_banner_ad_unit_id': _kDefIosBanner,
-    });
-
-    try {
-      await _remoteConfig.setConfigSettings(
-        RemoteConfigSettings(
-          minimumFetchInterval: const Duration(hours: 1),
-          fetchTimeout: const Duration(seconds: 10),
-        ),
-      );
-      await _remoteConfig.fetchAndActivate();
-    } catch (_) {
-      // keep defaults on failure
-    }
-
-    setState(() {
-      _androidStoreUrl = _remoteConfig.getString('android_store_url');
-      _iosStoreUrl = _remoteConfig.getString('ios_store_url');
-      _androidInterstitialId = _remoteConfig.getString(
-        'android_interstitial_ad_unit_id',
-      );
-      _iosInterstitialId = _remoteConfig.getString(
-        'ios_interstitial_ad_unit_id',
-      );
-      _androidBannerId = _remoteConfig.getString('android_banner_ad_unit_id');
-      _iosBannerId = _remoteConfig.getString('ios_banner_ad_unit_id');
-    });
-  }
+  final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
+  StreamSubscription<RemoteConfigUpdate>? _rcSub;
 
   // ───────────────────────── Controllers / state ─────────────────────────
-  final ScreenshotController _screenshotController = ScreenshotController();
-  Uint8List? _capturedImage;
-
-  double _rotationAngle = 0.0;
+  final ScreenshotController _shot = ScreenshotController();
+  Uint8List? _captured;
+  double _rotation = 0;
   bool _noInternet = false;
   Future<List<Uint8List?>>? _imagesFuture;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
 
   static const MethodChannel _methodChannel = MethodChannel('gallery_saver');
 
   InterstitialAd? _interstitialAd;
-  bool _isAdLoaded = false;
-  int _ambigramActionsCount = 0;
+  bool _isIntLoaded = false;
+  int _actionCount = 0;
 
   BannerAd? _bannerAd;
-  bool _isBannerAdLoaded = false;
+  bool _isBannerLoaded = false;
 
   // ───────────────────────── lifecycle ─────────────────────────
   @override
   void initState() {
     super.initState();
-    _initRemoteConfig();
+    _setupRemoteConfig();
     _maybeLoadImages();
     _loadInterstitialAd();
     _loadBannerAd();
 
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
-      results,
-    ) {
-      if (results.contains(ConnectivityResult.none)) {
+    // connectivity listener
+    _connSub = Connectivity().onConnectivityChanged.listen((r) {
+      if (r.contains(ConnectivityResult.none)) {
         setState(() {
           _noInternet = true;
           _imagesFuture = null;
@@ -139,24 +96,85 @@ class _PreviewScreenState extends State<PreviewScreen> {
     });
   }
 
+  Future<void> _setupRemoteConfig() async {
+    await _rc.setDefaults({
+      'android_store_url': _defAndroidStore,
+      'ios_store_url': _defIosStore,
+      'android_interstitial_ad_unit_id': _defAndroidInt,
+      'ios_interstitial_ad_unit_id': _defIosInt,
+      'android_banner_ad_unit_id': _defAndroidBan,
+      'ios_banner_ad_unit_id': _defIosBan,
+    });
+
+    try {
+      await _rc.setConfigSettings(
+        RemoteConfigSettings(
+          minimumFetchInterval: const Duration(hours: 1),
+          fetchTimeout: const Duration(seconds: 10),
+        ),
+      );
+      await _rc.fetchAndActivate();
+    } catch (_) {
+      /* ignore */
+    }
+    _applyRemoteValues();
+
+    // live updates
+    _rcSub = _rc.onConfigUpdated.listen((event) async {
+      await _rc.activate();
+      _applyRemoteValues(forceAdReload: true);
+    });
+  }
+
+  void _applyRemoteValues({bool forceAdReload = false}) {
+    final oldInt = Platform.isAndroid ? _androidIntId : _iosIntId;
+    final oldBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+
+    _androidStoreUrl = _rc.getString('android_store_url');
+    _iosStoreUrl = _rc.getString('ios_store_url');
+    _androidIntId = _rc.getString('android_interstitial_ad_unit_id');
+    _iosIntId = _rc.getString('ios_interstitial_ad_unit_id');
+    _androidBannerId = _rc.getString('android_banner_ad_unit_id');
+    _iosBannerId = _rc.getString('ios_banner_ad_unit_id');
+
+    if (forceAdReload) {
+      final newInt = Platform.isAndroid ? _androidIntId : _iosIntId;
+      final newBan = Platform.isAndroid ? _androidBannerId : _iosBannerId;
+
+      if (newInt != oldInt) {
+        _interstitialAd?.dispose();
+        _isIntLoaded = false;
+        _loadInterstitialAd();
+      }
+      if (newBan != oldBan) {
+        _bannerAd?.dispose();
+        _isBannerLoaded = false;
+        _loadBannerAd();
+      }
+    }
+
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
+    _connSub?.cancel();
+    _rcSub?.cancel();
     _interstitialAd?.dispose();
     _bannerAd?.dispose();
     super.dispose();
   }
 
-  // ───────────────────────── Ads helpers ─────────────────────────
+  // ───────────────────────── Ads ─────────────────────────
   void _loadInterstitialAd() {
-    final id = Platform.isAndroid ? _androidInterstitialId : _iosInterstitialId;
+    final id = Platform.isAndroid ? _androidIntId : _iosIntId;
     InterstitialAd.load(
       adUnitId: id,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           _interstitialAd = ad;
-          _isAdLoaded = true;
+          _isIntLoaded = true;
           ad.fullScreenContentCallback = FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {
               ad.dispose();
@@ -168,29 +186,31 @@ class _PreviewScreenState extends State<PreviewScreen> {
             },
           );
         },
-        onAdFailedToLoad: (_) => _isAdLoaded = false,
+        onAdFailedToLoad: (_) => _isIntLoaded = false,
       ),
     );
-  }
-
-  Future<void> _tryShowInterstitialAd() async {
-    if (_interstitialAd != null && _isAdLoaded) {
-      await _interstitialAd!.show();
-      _isAdLoaded = false;
-    }
   }
 
   void _loadBannerAd() {
     final id = Platform.isAndroid ? _androidBannerId : _iosBannerId;
     _bannerAd = BannerAd(
-      size: AdSize.largeBanner,
       adUnitId: id,
-      listener: BannerAdListener(
-        onAdLoaded: (_) => setState(() => _isBannerAdLoaded = true),
-        onAdFailedToLoad: (ad, _) => ad.dispose(),
-      ),
+      size: AdSize.largeBanner,
       request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) => setState(() => _isBannerLoaded = true),
+        onAdFailedToLoad: (ad, _) {
+          ad.dispose();
+        },
+      ),
     )..load();
+  }
+
+  Future<void> _tryShowInterstitial() async {
+    if (_interstitialAd != null && _isIntLoaded) {
+      await _interstitialAd!.show();
+      _isIntLoaded = false;
+    }
   }
 
   // ───────────────────────── Image helpers ─────────────────────────
@@ -198,8 +218,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
     final cnt = widget.firstWord.length;
     if (cnt == 0) return;
 
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity == ConnectivityResult.none) {
+    final conn = await Connectivity().checkConnectivity();
+    if (conn == ConnectivityResult.none) {
       setState(() {
         _noInternet = true;
         _imagesFuture = null;
@@ -207,25 +227,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
     } else {
       setState(() {
         _noInternet = false;
-        _imagesFuture = _loadAllSvgs(cnt);
+        _imagesFuture = Future.wait(List.generate(cnt, _fetchSvgBytes));
       });
     }
   }
 
-  Future<List<Uint8List?>> _loadAllSvgs(int count) async =>
-      Future.wait(List.generate(count, _fetchSvgBytes));
-
   Future<Uint8List?> _fetchSvgBytes(int i) async {
     try {
-      final first = widget.firstWord[i].toLowerCase();
-      final second =
+      final f = widget.firstWord[i].toLowerCase();
+      final s =
           widget.secondWord.isNotEmpty
               ? widget.secondWord[widget.secondWord.length - 1 - i]
                   .toLowerCase()
               : widget.firstWord[widget.firstWord.length - 1 - i].toLowerCase();
-
-      final pair =
-          first.compareTo(second) > 0 ? '$second$first' : '$first$second';
+      final pair = f.compareTo(s) > 0 ? '$s$f' : '$f$s';
       final uri = Uri.parse(
         'https://d2p3tez4zcgtm0.cloudfront.net/ambigram-${widget.selectedChipIndex}/$pair.svg',
       );
@@ -237,20 +252,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   // ───────────────────────── UI helpers ─────────────────────────
-  void _rotatePreview() {
+  void _rotate() {
     HapticFeedback.lightImpact();
-    setState(() => _rotationAngle += pi);
+    setState(() => _rotation += pi);
   }
 
-  Future<void> _captureScreenshot() async {
-    final img = await _screenshotController.capture();
-    if (img != null) setState(() => _capturedImage = img);
+  Future<void> _capture() async {
+    final img = await _shot.capture();
+    if (img != null) setState(() => _captured = img);
   }
 
-  Future<void> _shareScreenshot() async {
-    if (_capturedImage == null) await _captureScreenshot();
-    if (_capturedImage == null) {
-      _showSnack('No screenshot to share.');
+  Future<void> _share() async {
+    if (_captured == null) await _capture();
+    if (_captured == null) {
+      _snack('No screenshot to share');
       return;
     }
 
@@ -258,54 +273,49 @@ class _PreviewScreenState extends State<PreviewScreen> {
       final dir = await getTemporaryDirectory();
       final path =
           '${dir.path}/ambigram_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = await File(path).writeAsBytes(_capturedImage!);
-
+      final file = await File(path).writeAsBytes(_captured!);
       final url = Platform.isIOS ? _iosStoreUrl : _androidStoreUrl;
 
       await Share.shareXFiles([
         XFile(file.path),
       ], text: 'Check out my ambigram! Download the app here: $url');
 
-      _ambigramActionsCount++;
-      if (_ambigramActionsCount % 2 == 0) _tryShowInterstitialAd();
+      if (++_actionCount % 2 == 0) _tryShowInterstitial();
     } catch (e) {
-      _showSnack('Error while sharing: $e');
+      _snack('Error while sharing: $e');
     }
   }
 
-  Future<void> _saveToGallery() async {
-    if (_capturedImage == null) await _captureScreenshot();
-    if (_capturedImage == null) {
-      _showSnack('No screenshot to save.');
+  Future<void> _save() async {
+    if (_captured == null) await _capture();
+    if (_captured == null) {
+      _snack('No screenshot to save');
       return;
     }
     try {
-      await _methodChannel.invokeMethod('saveImageToGallery', _capturedImage!);
-      if (!mounted) return;
-      _showSnack('Image saved to gallery successfully.');
-
-      _ambigramActionsCount++;
-      if (_ambigramActionsCount % 2 == 0) _tryShowInterstitialAd();
+      await _methodChannel.invokeMethod('saveImageToGallery', _captured!);
+      _snack('Image saved to gallery!');
+      if (++_actionCount % 2 == 0) _tryShowInterstitial();
     } on PlatformException catch (e) {
-      _showSnack('Error saving image to gallery: $e');
+      _snack('Error saving image: $e');
     }
   }
 
-  void _showSnack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   // ───────────────────────── build ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    final bgColor =
+    final bg =
         ColorPalette.backgroundChoices(context)[widget
             .selectedColorIndex].color;
-    final count = widget.firstWord.length;
+    final cnt = widget.firstWord.length;
 
     return Scaffold(
       bottomNavigationBar: SafeArea(
         child:
-            _isBannerAdLoaded
+            _isBannerLoaded
                 ? SizedBox(
                   width: _bannerAd!.size.width.toDouble(),
                   height: _bannerAd!.size.height.toDouble(),
@@ -331,10 +341,11 @@ class _PreviewScreenState extends State<PreviewScreen> {
               // header
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  // horizontal: 16,
                   vertical: 16,
                 ),
                 child: Column(
+                  mainAxisSize: MainAxisSize.max,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
                     Text(
@@ -359,13 +370,13 @@ class _PreviewScreenState extends State<PreviewScreen> {
               ),
               // preview
               Screenshot(
-                controller: _screenshotController,
+                controller: _shot,
                 child: GestureDetector(
-                  onTap: _rotatePreview,
+                  onTap: _rotate,
                   child: AnimatedRotation(
-                    turns: _rotationAngle / (2 * pi),
+                    turns: _rotation / (2 * pi),
                     duration: const Duration(milliseconds: 300),
-                    child: _buildPreview(bgColor, count),
+                    child: _buildPreview(bg, cnt),
                   ),
                 ),
               ),
@@ -376,10 +387,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 child: AmbigramButton(
                   onPressed:
                       _noInternet
-                          ? () => _showSnack(
-                            'No internet connection. Cannot share.',
-                          )
-                          : _shareScreenshot,
+                          ? () =>
+                              _snack('No internet connection. Cannot share.')
+                          : _share,
                   text: 'SHARE YOUR AMBIGRAM',
                 ),
               ),
@@ -389,9 +399,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 child: AmbigramButton(
                   onPressed:
                       _noInternet
-                          ? () =>
-                              _showSnack('No internet connection. Cannot save.')
-                          : _saveToGallery,
+                          ? () => _snack('No internet connection. Cannot save.')
+                          : _save,
                   text: 'SAVE IN GALLERY',
                 ),
               ),
@@ -413,14 +422,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
     return FutureBuilder<List<Uint8List?>>(
       future: _imagesFuture,
-      builder: (context, snapshot) {
+      builder: (context, snap) {
         if (_imagesFuture == null ||
-            snapshot.connectionState == ConnectionState.waiting ||
-            !snapshot.hasData) {
+            snap.connectionState == ConnectionState.waiting ||
+            !snap.hasData) {
           return _placeholder(bg, 'LOADING...');
         }
 
-        final bytesList = snapshot.data!;
+        final bytesList = snap.data!;
         return Container(
           width: double.infinity,
           height: 220,
@@ -438,8 +447,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
                             .toLowerCase()
                         : widget.firstWord[widget.firstWord.length - 1 - i]
                             .toLowerCase();
-
-                final flip = f.compareTo(s) > 0;
                 final bytes = bytesList[i];
 
                 if (bytes == null) {
@@ -461,6 +468,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   height: 300,
                   fit: BoxFit.contain,
                 );
+                final flip = f.compareTo(s) > 0;
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 0),
                   padding: const EdgeInsets.all(4),
