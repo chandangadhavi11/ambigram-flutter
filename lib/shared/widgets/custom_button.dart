@@ -1,9 +1,12 @@
+import 'dart:io' show Platform; // Only used to check for Android
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class AmbigramButton extends StatefulWidget {
   final VoidCallback onPressed;
-  final VoidCallback? onClick; // Optional additional onClick callback.
+  final VoidCallback? onClick; // Optional additional callback.
   final String text;
 
   const AmbigramButton({
@@ -14,55 +17,56 @@ class AmbigramButton extends StatefulWidget {
   });
 
   @override
-  _AmbigramButtonState createState() => _AmbigramButtonState();
+  State<AmbigramButton> createState() => _AmbigramButtonState();
 }
 
 class _AmbigramButtonState extends State<AmbigramButton> {
   double _opacity = 1.0;
 
-  void _onTapDown(TapDownDetails details) {
-    // Decrease opacity to simulate a pressed state.
-    setState(() {
-      _opacity = 0.6;
-    });
+  // Helpers ------------------------------------------------------------------
+
+  bool get _isAndroid {
+    if (kIsWeb) return false; // No system sounds on web
+    // `Platform.isAndroid` works everywhere except web; fallback for tests/desktops
+    return Platform.isAndroid ||
+        defaultTargetPlatform == TargetPlatform.android;
   }
 
-  void _onTapUp(TapUpDetails details) {
-    // Return opacity back to normal.
-    setState(() {
-      _opacity = 1.0;
-    });
-  }
+  // Gesture callbacks --------------------------------------------------------
 
-  void _onTapCancel() {
-    // Reset opacity if tap is cancelled.
-    setState(() {
-      _opacity = 1.0;
-    });
-  }
+  void _onTapDown(TapDownDetails _) => setState(() => _opacity = 0.6);
+
+  void _onTapUp(TapUpDetails _) => setState(() => _opacity = 1.0);
+
+  void _onTapCancel() => setState(() => _opacity = 1.0);
 
   void _handleTap() {
-    // Provide haptic feedback.
+    // ▸ 1. Native Android click sound
+    if (_isAndroid) {
+      SystemSound.play(SystemSoundType.click); // Same sound used by InkWell
+    }
+
+    // ▸ 2. Haptic feedback (works on both Android & iOS)
     HapticFeedback.heavyImpact();
-    // Trigger the main onPressed callback.
+
+    // ▸ 3. Callbacks
     widget.onPressed();
-    // Also call onClick if it is provided.
     widget.onClick?.call();
   }
+
+  // Build --------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Keep the original color (#2B2734) in light mode,
-    // and use the theme's primary color in dark mode (customize as desired).
-    final Color backgroundColor =
+    // Primary colour logic
+    final backgroundColor =
         theme.brightness == Brightness.light
             ? const Color(0xFF2B2734)
             : theme.colorScheme.primary;
 
-    // Keep white text in light mode and adapt to onPrimary in dark mode.
-    final Color textColor =
+    final textColor =
         theme.brightness == Brightness.light
             ? Colors.white
             : theme.colorScheme.onPrimary;
@@ -83,13 +87,12 @@ class _AmbigramButtonState extends State<AmbigramButton> {
           child: Text(
             widget.text,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: textColor,
+            style: const TextStyle(
               fontSize: 12,
               fontFamily: 'Averta Demo PE Cutted Demo',
               fontWeight: FontWeight.w400,
               letterSpacing: 2,
-            ),
+            ).copyWith(color: textColor),
           ),
         ),
       ),
