@@ -35,8 +35,8 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _defChips =
       'ANTIOGLYPH,ESCHERESQUE,AMBORATTIC,SPECULON,AETHERGLYPH,GYROGLYPH,ENANTIGRAM';
   static const _defInitialCredits = 25;
-  static const _defColorJson = '''
-  [{"name":"Off White","color":"#FAFAFA"},{"name":"Pink","color":"#FFC0CB"}]''';
+  static const _defColorJson =
+      '[{"name":"Off White","color":"#FAFAFA"},{"name":"Pink","color":"#FFC0CB"}]';
 
   static const _defMinAndroidBuild = 1;
   static const _defMinIosBuild = 1;
@@ -76,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
   RewardedAd? _rewardedAd;
+  bool _rewardReady = false;
 
   final FirebaseRemoteConfig _rc = FirebaseRemoteConfig.instance;
   StreamSubscription<RemoteConfigUpdate>? _rcSub;
@@ -105,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  // ───────────────────────── Remote‑Config ─────────────────────────
   Future<void> _setupRemoteConfig() async {
     await _rc.setDefaults({
       'android_home_banner_ad_unit_id': _defAndroidBanner,
@@ -170,6 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (newReward != oldReward) {
         _rewardedAd?.dispose();
+        _rewardedAd = null;
+        _rewardReady = false;
         _loadRewardedAd();
       }
     }
@@ -209,16 +213,34 @@ class _HomeScreenState extends State<HomeScreen> {
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewardedAd = ad;
+          _rewardReady = true;
+
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _rewardReady = false;
+              _loadRewardedAd();
+              if (mounted) Navigator.of(context).maybePop();
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _rewardReady = false;
+              _loadRewardedAd();
+              if (mounted) Navigator.of(context).maybePop();
+            },
+          );
         },
         onAdFailedToLoad: (_) {
           _rewardedAd = null;
+          _rewardReady = false;
+          Future.delayed(const Duration(seconds: 30), _loadRewardedAd);
         },
       ),
     );
   }
 
   void _showRewardedAd() {
-    if (_rewardedAd == null) {
+    if (!_rewardReady || _rewardedAd == null) {
       Navigator.of(context).pop();
       return;
     }
@@ -226,10 +248,11 @@ class _HomeScreenState extends State<HomeScreen> {
       onUserEarnedReward: (_, __) async {
         setState(() => _credits += 5);
         await _saveCredits();
+        if (mounted) Navigator.of(context).maybePop();
       },
     );
-    Navigator.of(context).pop();
     _rewardedAd = null;
+    _rewardReady = false;
   }
 
   // ───────────────────────── generators ─────────────────────────
@@ -246,11 +269,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // CHANGE: only consume a credit if text has been generated
   void _onChipSelected(int i) async {
     if (i == _selectedChipIndex) return;
+
+    // If no ambigram text yet, switch without cost
+    if (_firstWord.isEmpty && _secondWord.isEmpty) {
+      setState(() => _selectedChipIndex = i);
+      return;
+    }
+
     if (_credits > 0) {
-      setState(() => _credits--);
-      _selectedChipIndex = i;
+      setState(() {
+        _credits--;
+        _selectedChipIndex = i;
+      });
       await _saveCredits();
     } else {
       _showCreditLimitModal();
@@ -287,6 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
     builder:
         (_) => _CreditModal(
           onWatchAd: _showRewardedAd,
+          rewardReady: _rewardReady,
           showBuy: _showBuyButton,
           buyUrl: _buyUrl,
         ),
@@ -403,10 +437,12 @@ class _HomeScreenState extends State<HomeScreen> {
 // ───────────────────────── Modal widgets ─────────────────────────
 class _CreditModal extends StatelessWidget {
   final VoidCallback onWatchAd;
+  final bool rewardReady;
   final bool showBuy;
   final String buyUrl;
   const _CreditModal({
     required this.onWatchAd,
+    required this.rewardReady,
     required this.showBuy,
     required this.buyUrl,
   });
@@ -439,7 +475,10 @@ class _CreditModal extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: Color(0xFF959399)),
             ),
             const SizedBox(height: 24),
-            AmbigramButton(text: 'WATCH AD (+5)', onPressed: onWatchAd),
+            AmbigramButton(
+              text: 'WATCH AD (+5)',
+              onPressed: rewardReady ? onWatchAd : () {},
+            ),
             if (showBuy) ...[
               const SizedBox(height: 12),
               AmbigramButton(
