@@ -11,7 +11,7 @@ plugins {
 android {
     ndkVersion = "27.0.12077973"
     
-    namespace = "com.example.flutter_application_1"
+    namespace = "com.cuberix.ambigram"
     compileSdk = 35
 
     compileOptions {
