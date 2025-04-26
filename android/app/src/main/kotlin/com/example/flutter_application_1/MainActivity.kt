@@ -1,4 +1,4 @@
-package com.example.flutter_application_1
+package com.cuberix.ambigram
 
 import android.content.ContentValues
 import android.content.Intent
